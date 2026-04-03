@@ -22,20 +22,12 @@ from typing import Any
 from typing import cast
 from typing import Optional
 from absl import logging
-from android_env import environment
 from android_env import env_interface
 from android_env import loader
 from android_env.components import config_classes
-from android_env.components import coordinator as coordinator_lib
-from android_env.components import device_settings as device_settings_lib
-from android_env.components import task_manager as task_manager_lib
-from android_env.components.simulators.emulator import emulator_simulator
-from android_env.proto import emulator_controller_pb2_grpc
-from android_env.proto import snapshot_service_pb2_grpc
 from android_env.proto.a11y import android_accessibility_forest_pb2
 from android_env.wrappers import a11y_grpc_wrapper
 from android_env.wrappers import base_wrapper
-import grpc
 from android_world.env import adb_utils
 from android_world.env import representation_utils
 from android_world.utils import file_utils
@@ -209,7 +201,6 @@ class AndroidWorldController(base_wrapper.BaseWrapper):
         console_port=self.env._coordinator._simulator._config.emulator_launcher.emulator_console_port,
         adb_path=self.env._coordinator._simulator._config.adb_controller.adb_path,
         grpc_port=self.env._coordinator._simulator._config.emulator_launcher.grpc_port,
-        grpc_host=self.env._coordinator._simulator._config.emulator_launcher.grpc_host,
     ).env
     # pylint: enable=protected-access
     # pytype: enable=attribute-error
@@ -313,59 +304,10 @@ max_episode_sec: 7200  # Prevent infinite episodes.
   return _TASK_PATH
 
 
-class _WslEmulatorSimulator(emulator_simulator.EmulatorSimulator):
-  """EmulatorSimulator subclass that supports connecting to a remote gRPC host."""
-
-  def __init__(self, config: config_classes.EmulatorConfig, grpc_host: str = 'localhost'):
-    self._grpc_host = grpc_host
-    super().__init__(config)
-
-  def _connect_to_emulator(self, grpc_port, timeout_sec=100):
-    host = self._grpc_host
-    logging.info('Creating gRPC channel to the emulator on %s:%r', host, grpc_port)
-    address = f'{host}:{grpc_port}'
-    options = [('grpc.max_send_message_length', -1),
-               ('grpc.max_receive_message_length', -1)]
-
-    try:
-      if host in ('localhost', '127.0.0.1'):
-        creds = grpc.local_channel_credentials()
-        self._channel = grpc.secure_channel(address, creds, options=options)
-      else:
-        self._channel = grpc.insecure_channel(address, options=options)
-      grpc.channel_ready_future(self._channel).result(timeout=timeout_sec)
-    except (grpc.RpcError, grpc.FutureTimeoutError) as grpc_error:
-      logging.exception('Failed to connect to the emulator.')
-      raise emulator_simulator.EmulatorBootError(
-          'Failed to connect to the emulator.') from grpc_error
-
-    logging.info('Added gRPC channel for the Emulator on %s', address)
-    emulator_stub = emulator_controller_pb2_grpc.EmulatorControllerStub(self._channel)
-    snapshot_stub = snapshot_service_pb2_grpc.SnapshotServiceStub(self._channel)
-    return emulator_stub, snapshot_stub
-
-
-def _load_with_grpc_host(
-    config: config_classes.AndroidEnvConfig,
-    grpc_host: str = 'localhost',
-) -> environment.AndroidEnv:
-  """Loads an AndroidEnv instance, using a custom gRPC host for the emulator."""
-  task_proto = loader._load_task(config.task)
-  task_manager = task_manager_lib.TaskManager(task_proto)
-  loader._process_emulator_launcher_config(config.simulator)
-  simulator = _WslEmulatorSimulator(config=config.simulator, grpc_host=grpc_host)
-  device_settings = device_settings_lib.DeviceSettings(simulator)
-  coordinator = coordinator_lib.Coordinator(simulator, task_manager, device_settings)
-  return environment.AndroidEnv(
-      simulator=simulator, coordinator=coordinator, task_manager=task_manager
-  )
-
-
 def get_controller(
     console_port: int = 5554,
     adb_path: str = DEFAULT_ADB_PATH,
     grpc_port: int = 8554,
-    grpc_host: str = 'localhost',
 ) -> AndroidWorldController:
   """Creates a controller by connecting to an existing Android environment."""
 
@@ -382,9 +324,6 @@ def get_controller(
           adb_controller=config_classes.AdbControllerConfig(adb_path=adb_path),
       ),
   )
-  if grpc_host in ('localhost', '127.0.0.1'):
-    android_env_instance = loader.load(config)
-  else:
-    android_env_instance = _load_with_grpc_host(config, grpc_host=grpc_host)
+  android_env_instance = loader.load(config)
   logging.info('Setting up AndroidWorldController.')
   return AndroidWorldController(android_env_instance)

@@ -44,7 +44,6 @@ def _find_adb_directory() -> str:
   potential_paths = [
       os.path.expanduser('~/Library/Android/sdk/platform-tools/adb'),
       os.path.expanduser('~/Android/Sdk/platform-tools/adb'),
-      '/mnt/c/Users/quanp/AppData/Local/Android/Sdk/platform-tools/adb.exe',
   ]
   for path in potential_paths:
     if os.path.isfile(path):
@@ -77,13 +76,6 @@ _DEVICE_CONSOLE_PORT = flags.DEFINE_integer(
     ' so on.',
 )
 
-_GRPC_HOST = flags.DEFINE_string(
-    'grpc_host',
-    'localhost',
-    'The host for gRPC communication with the emulator. Use the Windows host IP'
-    ' (e.g. gateway IP) when running from WSL.',
-)
-
 _TASK = flags.DEFINE_string(
     'task',
     None,
@@ -97,7 +89,6 @@ def _main() -> None:
       console_port=_DEVICE_CONSOLE_PORT.value,
       emulator_setup=_EMULATOR_SETUP.value,
       adb_path=_ADB_PATH.value,
-      grpc_host=_GRPC_HOST.value,
   )
   env.reset(go_home=True)
   task_registry = registry.TaskRegistry()

@@ -6,16 +6,16 @@
 env:
   console_port: 5556
   grpc_port: 8554
-  adb_path: ~/Android/Sdk/platform-tools/adb
-  emulator_path: ~/Android/Sdk/emulator/emulator
+  adb_path: ~/Android/Sdk/platform-tools/adb        
+  emulator_path: ~/Android/Sdk/emulator/emulator    
   avd_name: AndroidWorldAvd
-  android_sdk_root: ~/Android/Sdk/
-  android_avd_home: ~/.android/avd/
+  android_sdk_root: ~/Android/Sdk/                  
+  android_avd_home: ~/.android/avd/               
 
 llm:
   type: openai
   base_url: http://localhost:8001
-  model: UI-Voyager
+  model: Qwen3-VL-8B-Instruct
   temperature: 0.0
   max_tokens: 16384
   top_p: 1

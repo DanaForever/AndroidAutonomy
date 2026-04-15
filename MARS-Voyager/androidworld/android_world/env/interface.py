@@ -17,7 +17,8 @@
 import abc
 import dataclasses
 import time
-from typing import Any, Optional, Self
+from typing import Any, Optional
+from typing_extensions import Self
 
 from absl import logging
 from android_env.components import action_type

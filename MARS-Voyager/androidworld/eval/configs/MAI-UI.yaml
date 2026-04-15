@@ -1,0 +1,37 @@
+# Android World Evaluation Config - MAI-UI Navigator
+# Usage:
+#   ./run_maiui_android_world.sh
+# NUM_WORKERS=1 CONFIG_NAME=MAI-UI MODEL_NAME=MAI-UI ./run_maiui_android_world.sh
+
+env:
+  console_port: 5556
+  grpc_port: 8554
+  adb_path: ~/Android/Sdk/platform-tools/adb
+  emulator_path: ~/Android/Sdk/emulator/emulator
+  avd_name: AndroidWorldAvd
+  android_sdk_root: ~/Android/Sdk/
+  android_avd_home: ~/.android/avd/
+
+# Navigator LLM endpoint (OpenAI-compatible, e.g. a local vLLM server).
+llm:
+  type: openai
+  base_url: http://localhost:8000/v1
+  model: MAI-UI
+  temperature: 0.0
+  max_tokens: 16384
+  top_p: 1.0
+  top_k: -1
+
+agent:
+  type: mai_ui
+  name: MAIUI-Agent
+  wait_after_action_seconds: 3
+  history_n: 8
+
+eval:
+  suite_family: android_world
+  tasks: null  # null means all tasks
+  n_task_combinations: 1
+  task_random_seed: null
+  checkpoint_dir: ""
+  output_path: ~/android_world/runs

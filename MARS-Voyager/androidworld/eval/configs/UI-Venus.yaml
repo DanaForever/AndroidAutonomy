@@ -1,0 +1,45 @@
+# Android World Evaluation Config - UI-Venus Navigator
+# Usage:
+#   ./run_uivenus_android_world.sh
+#
+# Serve model separately with e.g.:
+#   vllm serve /path/to/UI-Venus-Navi-7B \
+#     --served-model-name UI-Venus --port 8001 \
+#     --limit-mm-per-prompt image=6 --max-model-len 16192
+
+env:
+  console_port: 5556
+  grpc_port: 8554
+  adb_path: ~/Android/Sdk/platform-tools/adb
+  emulator_path: ~/Android/Sdk/emulator/emulator
+  avd_name: AndroidWorldAvd
+  android_sdk_root: ~/Android/Sdk/
+  android_avd_home: ~/.android/avd/
+
+# Navigator LLM endpoint (OpenAI-compatible, e.g. a local vLLM server).
+llm:
+  type: openai
+  base_url: http://localhost:8000/v1
+  model: UI-Venus
+  temperature: 0.0
+  max_tokens: 32768
+  top_p: 1.0
+  top_k: -1
+  max_pixels: 12845056
+  min_pixels: 3136
+  request_timeout: 120
+
+agent:
+  type: ui_venus
+  name: UIVenus-Agent
+  wait_after_action_seconds: 2
+  history_length: 5
+  prompt_type: mobile
+
+eval:
+  suite_family: android_world
+  tasks: null  # null means all tasks
+  n_task_combinations: 1
+  task_random_seed: null
+  checkpoint_dir: ""
+  output_path: ~/android_world/runs

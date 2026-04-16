@@ -93,18 +93,6 @@ def get_a11y_tree(
   for attempt in range(max_retries):
     try:
       extras = env.accumulate_new_extras()  # pytype:disable=attribute-error
-      logging.warning(
-          'A11Y attempt %d/%d, extras keys: %s',
-          attempt + 1,
-          max_retries,
-          list(extras.keys()) if hasattr(extras, 'keys') else type(extras),
-      )
-      logging.warning(
-          'A11Y attempt %d/%d, extras content: %r',
-          attempt + 1,
-          max_retries,
-          extras,
-      )
       forest = extras['accessibility_tree'][-1]
       return forest
     except KeyError as e:

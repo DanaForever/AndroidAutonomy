@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Android World Parallel Evaluation Script - MAI-UI Navigator
+"""Android World Parallel Evaluation Script - UI-Venus Navigator
 
-Runs AndroidWorld benchmark using the MAIUINaivigationAgent defined in
-MAI-UI/src/mai_naivigation_agent.py. Mirrors test_android_world.py but swaps
-the agent for a thin BaseEvalAgent wrapper around the MAI-UI navigator.
+Mirrors test_android_world_maiui.py but swaps the agent for a thin
+BaseEvalAgent wrapper around the UI-Venus navigator. Talks to an
+OpenAI-compatible vLLM endpoint serving the UI-Venus model, reusing
+UI-Venus's MOBILE_USER_PROMPT and parse_answer from
+UI-Venus/models/navigation/utils.py.
 """
 
 import argparse
+import base64
+import io
 import json
+import math
 import multiprocessing as mp
 import os
 import signal
@@ -15,7 +20,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -26,11 +31,11 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_ROOT = SCRIPT_DIR
 ANDROID_WORLD_PATH = PROJECT_ROOT / "androidworld"
 ANDROID_ENV_PATH = PROJECT_ROOT / "android_env"
-MAIUI_SRC_PATH = PROJECT_ROOT.parent / "MAI-UI" / "src"
+UIVENUS_ROOT = PROJECT_ROOT.parent / "UI-Venus"
 
 sys.path.insert(0, str(ANDROID_WORLD_PATH))
 sys.path.insert(0, str(ANDROID_ENV_PATH))
-sys.path.insert(0, str(MAIUI_SRC_PATH))
+sys.path.insert(0, str(UIVENUS_ROOT))
 
 
 def setup_logging(log_file: str):
@@ -85,55 +90,163 @@ def _zombie_reaper_thread(stop_event):
 
 
 # ---------------------------------------------------------------------------
-# MAI-UI eval agent wrapper
+# UI-Venus eval agent wrapper
 # ---------------------------------------------------------------------------
 
-def _build_mai_ui_eval_agent(env, agent_cfg: Dict[str, Any], llm_cfg: Dict[str, Any]):
-    """Construct a BaseEvalAgent that wraps MAIUINaivigationAgent."""
+def _smart_resize(h: int, w: int, factor: int = 28,
+                  min_pixels: int = 3136, max_pixels: int = 12845056) -> Tuple[int, int]:
+    """Replicates qwen_vl_utils.smart_resize (returns (h, w) resized)."""
+    if h < factor or w < factor:
+        raise ValueError(f'image too small: ({h}, {w})')
+    def round_by_factor(n: float, f: int) -> int:
+        return max(f, round(n / f) * f)
+    h_bar = round_by_factor(h, factor)
+    w_bar = round_by_factor(w, factor)
+    if h_bar * w_bar > max_pixels:
+        beta = math.sqrt((h * w) / max_pixels)
+        h_bar = max(factor, math.floor(h / beta / factor) * factor)
+        w_bar = max(factor, math.floor(w / beta / factor) * factor)
+    elif h_bar * w_bar < min_pixels:
+        beta = math.sqrt(min_pixels / (h * w))
+        h_bar = math.ceil(h * beta / factor) * factor
+        w_bar = math.ceil(w * beta / factor) * factor
+    return h_bar, w_bar
+
+
+# Maps free-form names the model may emit onto keys/patterns in
+# android_world's _PATTERN_TO_ACTIVITY (see androidworld/android_world/env/adb_utils.py).
+# Keys on the left are lowercased; values on the right are any string whose
+# lowercase prefix matches a pattern in _PATTERN_TO_ACTIVITY.
+_UIVENUS_APP_ALIASES: Dict[str, str] = {
+    'file manager': 'files',
+    'file': 'files',
+    'files app': 'files',
+    'documents': 'files',
+    'file explorer': 'files',
+    'gallery': 'simple gallery pro',
+    'photos': 'simple gallery pro',
+    'simple gallery': 'simple gallery pro',
+    'calendar': 'simple calendar pro',
+    'camera app': 'camera',
+    'phone': 'dialer',
+    'clock app': 'clock',
+    'alarm': 'clock',
+    'alarm clock': 'clock',
+    'audio recorder app': 'audio recorder',
+    'recorder': 'audio recorder',
+    'voice recorder': 'audio recorder',
+    'sms': 'simple sms messenger',
+    'messaging': 'messages',
+    'text messages': 'messages',
+    'markor notes': 'markor',
+    'notes': 'markor',
+    'browser': 'chrome',
+    'web browser': 'chrome',
+    'internet': 'chrome',
+    'maps': 'google maps',
+    'setting': 'settings',
+    'android settings': 'settings',
+}
+
+
+def _build_ui_venus_eval_agent(env, agent_cfg: Dict[str, Any], llm_cfg: Dict[str, Any]):
+    """Construct a BaseEvalAgent that wraps a UI-Venus HTTP navigator."""
     import time as _time
     from PIL import Image
     import numpy as np
+    import requests
     from absl import logging
 
     from android_world.env import json_action
     from eval.agents.base_agent import BaseEvalAgent, AgentStepResult
 
-    # Imported lazily so sys.path insertion (MAI-UI/src) has taken effect.
-    from mai_naivigation_agent import MAIUINaivigationAgent
+    # UI-Venus prompt + parser (reuses their mobile prompt and regex parser).
+    from models.navigation.utils import (
+        parse_answer,
+        get_user_prompt,
+    )
 
-    class MAIUIEvalAgent(BaseEvalAgent):
-        """BaseEvalAgent wrapper that delegates reasoning to MAI-UI navigator."""
+    class UIVenusEvalAgent(BaseEvalAgent):
+        """BaseEvalAgent wrapper that talks to UI-Venus over an OpenAI-compatible endpoint."""
 
         def __init__(
             self,
             env,
             llm_base_url: str,
             model_name: str,
-            name: str = 'MAIUI-Agent',
+            name: str = 'UIVenus-Agent',
             wait_after_action_seconds: float = 2.0,
-            history_n: int = 3,
+            history_length: int = 5,
+            prompt_type: str = 'mobile',
             temperature: float = 0.0,
             top_p: float = 1.0,
-            top_k: int = -1,
             max_tokens: int = 2048,
+            max_pixels: int = 12845056,
+            min_pixels: int = 3136,
+            request_timeout: float = 120.0,
         ):
             super().__init__(env, name, transition_pause=1.0)
-            self.navigator = MAIUINaivigationAgent(
-                llm_base_url=llm_base_url,
-                model_name=model_name,
-                runtime_conf={
-                    'history_n': history_n,
-                    'temperature': temperature,
-                    'top_p': top_p,
-                    'top_k': top_k,
-                    'max_tokens': max_tokens,
-                },
-            )
+            # Normalize base_url: chat/completions lives under /v1.
+            base = llm_base_url.rstrip('/')
+            if not base.endswith('/v1'):
+                base = base + '/v1'
+            self.chat_url = f'{base}/chat/completions'
+            self.model_name = model_name
+            self.temperature = temperature
+            self.top_p = top_p
+            self.max_tokens = max_tokens
+            self.max_pixels = max_pixels
+            self.min_pixels = min_pixels
+            self.request_timeout = request_timeout
+            self.history_length = max(0, int(history_length))
+            self.prompt_template = get_user_prompt(prompt_type)
             self.wait_after_action_seconds = wait_after_action_seconds
+            self.history: List[Dict[str, str]] = []
 
         def reset(self, go_home: bool = False) -> None:
             super().reset(go_home)
-            self.navigator.reset()
+            self.history = []
+
+        def _build_query(self, goal: str) -> str:
+            if not self.history:
+                prev = ''
+            else:
+                recent = self.history[-self.history_length:] if self.history_length > 0 else []
+                prev = '\n'.join(
+                    f"Step {i}: <think>{s['think']}</think><action>{s['action']}</action>"
+                    for i, s in enumerate(recent)
+                )
+            return self.prompt_template.format(user_task=goal, previous_actions=prev)
+
+        def _call_model(self, img_b64: str, user_text: str) -> Optional[str]:
+            payload = {
+                'model': self.model_name,
+                'temperature': self.temperature,
+                'top_p': self.top_p,
+                'max_tokens': self.max_tokens,
+                'messages': [
+                    {'role': 'system', 'content': 'You are a helpful assistant.'},
+                    {'role': 'user', 'content': [
+                        {'type': 'text', 'text': user_text},
+                        {'type': 'image_url',
+                         'image_url': {'url': f'data:image/png;base64,{img_b64}'}},
+                    ]},
+                ],
+            }
+            try:
+                r = requests.post(self.chat_url, json=payload,
+                                  timeout=self.request_timeout)
+                r.raise_for_status()
+                return r.json()['choices'][0]['message']['content']
+            except Exception as e:
+                print(f'[UI-Venus] LLM call failed ({self.chat_url}): {e}', flush=True)
+                return None
+
+        @staticmethod
+        def _extract_tag(tag: str, text: str) -> str:
+            import re
+            m = re.search(rf'<{tag}>(.*?)</{tag}>', text, re.DOTALL)
+            return m.group(1).strip() if m else ''
 
         def step(self, goal: str, task_name: Optional[str] = None) -> AgentStepResult:
             step_data = {
@@ -145,28 +258,54 @@ def _build_mai_ui_eval_agent(env, agent_cfg: Dict[str, Any], llm_cfg: Dict[str, 
                 'success': False,
             }
 
-            logging.info(f'---------- MAI-UI Step {len(self.navigator.traj_memory.steps) + 1} ----------')
+            print(f'[UI-Venus] ---------- Step {len(self.history) + 1} ----------', flush=True)
 
             state = self.get_post_transition_state()
             h, w = state.pixels.shape[0], state.pixels.shape[1]
             before = state.pixels.copy()
             step_data['before_screenshot'] = before
-            screenshot_pil = Image.fromarray(before)
+
+            img = Image.fromarray(before).convert('RGB')
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            img_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+
+            # Coordinates come back in the smart-resized pixel space; compute that.
+            resized_h, resized_w = _smart_resize(
+                h, w, factor=28,
+                min_pixels=self.min_pixels, max_pixels=self.max_pixels,
+            )
+
+            user_text = self._build_query(goal)
 
             try:
-                prediction, action_json = self.navigator.predict(
-                    goal, {'screenshot': screenshot_pil}
-                )
-                step_data['model_response'] = prediction
-                logging.info(f'MAI-UI raw response: {prediction}')
+                response = self._call_model(img_b64, user_text)
+                step_data['model_response'] = response
+                if response is None:
+                    print('[UI-Venus] No response from LLM endpoint', flush=True)
+                    return AgentStepResult(done=False, data=step_data)
+                print(f'[UI-Venus] raw response:\n{response}', flush=True)
 
-                if not action_json or action_json.get('action') is None:
-                    logging.warning('MAI-UI: no action parsed')
+                think_text = self._extract_tag('think', response)
+                action_text = self._extract_tag('action', response)
+                if not action_text:
+                    logging.warning('UI-Venus: no <action> tag found')
                     return AgentStepResult(done=False, data=step_data)
 
-                action = self._to_json_action(action_json, w, h)
+                try:
+                    action_name, params = parse_answer(action_text)
+                except Exception as e:
+                    logging.warning(f'UI-Venus: parse_answer failed: {e}')
+                    self.history.append({'think': think_text, 'action': action_text})
+                    return AgentStepResult(done=False, data=step_data)
+
+                self.history.append({'think': think_text, 'action': action_text})
+
+                action = self._to_json_action(
+                    action_name, params, w, h, resized_w, resized_h,
+                )
                 step_data['action'] = action
-                logging.info(f'MAI-UI parsed action: {action}')
+                print(f'[UI-Venus] parsed action: {action}', flush=True)
 
                 if action.action_type in ('status', 'answer'):
                     step_data['success'] = True
@@ -182,89 +321,97 @@ def _build_mai_ui_eval_agent(env, agent_cfg: Dict[str, Any], llm_cfg: Dict[str, 
                 return AgentStepResult(done=False, data=step_data)
 
             except Exception as e:
-                logging.error(f'MAI-UI step error: {e}', exc_info=True)
+                logging.error(f'UI-Venus step error: {e}', exc_info=True)
                 step_data['error'] = str(e)
                 return AgentStepResult(done=False, data=step_data)
 
-        def _to_json_action(self, a: Dict[str, Any], screen_w: int, screen_h: int):
-            """Map MAI-UI action dict (normalized [0,1] coords) to JSONAction."""
-            act = a.get('action', '')
+        def _rescale(self, x: float, y: float, orig_w: int, orig_h: int,
+                     r_w: int, r_h: int) -> Tuple[int, int]:
+            # Served UI-Venus emits coordinates normalized to 1000x1000
+            # (matches Venus_framework/policy/ui_venus_policy.py). The r_w/r_h
+            # smart-resized-pixel convention in ui_venus_navi_agent.py only
+            # applies when running vLLM in-process with a custom processor.
+            sx = int(round(float(x) * orig_w / 1000.0))
+            sy = int(round(float(y) * orig_h / 1000.0))
+            return max(0, min(sx, orig_w - 1)), max(0, min(sy, orig_h - 1))
+
+        def _to_json_action(self, action_name: str, params: Dict[str, Any],
+                             w: int, h: int, r_w: int, r_h: int):
+            """Map UI-Venus (action_name, params) to JSONAction.
+
+            UI-Venus emits coordinates in the smart-resized pixel space; we
+            rescale back to original-screen pixels before executing.
+            """
             x = y = x_ = y_ = None
             text = direction = goal_status = app_name = None
+            act = 'wait'
 
-            def denorm(c):
-                return round(float(c[0]) * screen_w), round(float(c[1]) * screen_h)
+            if action_name == 'Click':
+                bx, by = params['box']
+                x, y = self._rescale(bx, by, w, h, r_w, r_h)
+                act = 'click'
 
-            if act in ('click', 'long_press'):
-                if 'coordinate' in a:
-                    x, y = denorm(a['coordinate'])
+            elif action_name == 'LongPress':
+                bx, by = params['box']
+                x, y = self._rescale(bx, by, w, h, r_w, r_h)
+                act = 'long_press'
 
-            elif act == 'swipe':
-                direction = a.get('direction')
-                if 'coordinate' in a:
-                    # MAI-UI emits an anchor + direction; android_world's swipe
-                    # only honors anchors when both (x,y) and (x_,y_) are set,
-                    # otherwise it swipes from screen center. Synthesize an
-                    # end point so the anchor is respected.
-                    x, y = denorm(a['coordinate'])
-                    dx = int(0.3 * screen_w)
-                    dy = int(0.3 * screen_h)
-                    d = (direction or '').lower()
-                    if d == 'up':
-                        x_, y_ = x, max(0, y - dy)
-                    elif d == 'down':
-                        x_, y_ = x, min(screen_h - 1, y + dy)
-                    elif d == 'left':
-                        x_, y_ = max(0, x - dx), y
-                    elif d == 'right':
-                        x_, y_ = min(screen_w - 1, x + dx), y
-                    else:
-                        x_, y_ = -1, -1
-                else:
-                    x_, y_ = -1, -1
-
-            elif act == 'drag':
-                # Map drag -> swipe with explicit start/end coords.
-                if 'start_coordinate' in a:
-                    x, y = denorm(a['start_coordinate'])
-                if 'end_coordinate' in a:
-                    x_, y_ = denorm(a['end_coordinate'])
+            elif action_name == 'Drag':
+                sx, sy = params['start']
+                ex, ey = params['end']
+                x, y = self._rescale(sx, sy, w, h, r_w, r_h)
+                x_, y_ = self._rescale(ex, ey, w, h, r_w, r_h)
                 act = 'swipe'
 
-            elif act in ('open', 'open_app'):
-                act = 'open_app'
-                app_name = a.get('text', '') or a.get('app_name', '')
+            elif action_name == 'Scroll':
+                start = params.get('start')
+                end = params.get('end')
+                d = (params.get('direction') or '').lower()
+                if start and end:
+                    x, y = self._rescale(start[0], start[1], w, h, r_w, r_h)
+                    x_, y_ = self._rescale(end[0], end[1], w, h, r_w, r_h)
+                elif d in ('up', 'down', 'left', 'right'):
+                    direction = d
+                    x_, y_ = -1, -1
+                else:
+                    x_, y_ = -1, -1
+                act = 'swipe'
 
-            elif act in ('type', 'input_text'):
+            elif action_name == 'Type':
+                text = params.get('content', '')
                 act = 'input_text'
-                text = a.get('text', '')
 
-            elif act == 'system_button':
-                btn = str(a.get('button', '')).lower()
-                act = {
-                    'back': 'navigate_back',
-                    'home': 'navigate_home',
-                    'enter': 'keyboard_enter',
-                }.get(btn, 'wait')
+            elif action_name == 'Launch':
+                raw = (params.get('app') or params.get('url') or '').strip()
+                app_name = _UIVENUS_APP_ALIASES.get(raw.lower(), raw)
+                act = 'open_app'
 
-            elif act == 'terminate':
+            elif action_name == 'Wait':
+                act = 'wait'
+
+            elif action_name == 'Finished':
+                goal_status = 'success'
                 act = 'status'
-                goal_status = a.get('status', 'success')
+                content = params.get('content', '')
+                if content and hasattr(self.env, 'interaction_cache'):
+                    self.env.interaction_cache = content
 
-            elif act == 'answer':
-                text = a.get('text', '')
+            elif action_name == 'CallUser':
+                text = params.get('content', '')
                 if hasattr(self.env, 'interaction_cache'):
                     self.env.interaction_cache = text
+                act = 'answer'
 
-            elif act in ('wait', 'double_click'):
-                if act == 'double_click':
-                    # No native double_click in android_world; fall back to click.
-                    act = 'click'
-                    if 'coordinate' in a:
-                        x, y = denorm(a['coordinate'])
-
+            elif action_name == 'PressBack':
+                act = 'navigate_back'
+            elif action_name == 'PressHome':
+                act = 'navigate_home'
+            elif action_name == 'PressEnter':
+                act = 'keyboard_enter'
+            elif action_name == 'PressRecent':
+                # No direct JSONAction for "recent apps"; fall back to wait.
+                act = 'wait'
             else:
-                logging.warning(f'MAI-UI: unknown action {act}, falling back to wait')
                 act = 'wait'
 
             return json_action.JSONAction(
@@ -279,17 +426,20 @@ def _build_mai_ui_eval_agent(env, agent_cfg: Dict[str, Any], llm_cfg: Dict[str, 
                 app_name=app_name,
             )
 
-    return MAIUIEvalAgent(
+    return UIVenusEvalAgent(
         env=env,
         llm_base_url=llm_cfg.get('base_url', 'http://localhost:8001/v1'),
-        model_name=llm_cfg.get('model', 'MAI-UI'),
-        name=agent_cfg.get('name', 'MAIUI-Agent'),
+        model_name=llm_cfg.get('model', 'UI-Venus'),
+        name=agent_cfg.get('name', 'UIVenus-Agent'),
         wait_after_action_seconds=agent_cfg.get('wait_after_action_seconds', 2.0),
-        history_n=agent_cfg.get('history_n', 3),
+        history_length=agent_cfg.get('history_length', 5),
+        prompt_type=agent_cfg.get('prompt_type', 'mobile'),
         temperature=llm_cfg.get('temperature', 0.0),
         top_p=llm_cfg.get('top_p', 1.0),
-        top_k=llm_cfg.get('top_k', -1),
         max_tokens=llm_cfg.get('max_tokens', 2048),
+        max_pixels=llm_cfg.get('max_pixels', 12845056),
+        min_pixels=llm_cfg.get('min_pixels', 3136),
+        request_timeout=llm_cfg.get('request_timeout', 120.0),
     )
 
 
@@ -356,8 +506,8 @@ def worker_process(
         print(f'[Worker {worker_id}] Initializing Android environment...')
         runner.setup_env()
 
-        print(f'[Worker {worker_id}] Initializing MAI-UI Agent...')
-        runner.agent = _build_mai_ui_eval_agent(
+        print(f'[Worker {worker_id}] Initializing UI-Venus Agent...')
+        runner.agent = _build_ui_venus_eval_agent(
             env=runner.env,
             agent_cfg=worker_config.get('agent', {}),
             llm_cfg=worker_config.get('llm', {}),
@@ -568,8 +718,8 @@ def run_parallel_eval(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Android World MAI-UI Parallel Evaluation')
-    default_config = str(ANDROID_WORLD_PATH / "eval" / "configs" / "MAI-UI.yaml")
+    parser = argparse.ArgumentParser(description='Android World UI-Venus Parallel Evaluation')
+    default_config = str(ANDROID_WORLD_PATH / "eval" / "configs" / "UI-Venus.yaml")
     parser.add_argument('--config', type=str, default=default_config)
     parser.add_argument('--num_workers', type=int, default=1)
     parser.add_argument('--start_port', type=int, default=5556)
@@ -626,7 +776,7 @@ def main():
     setup_logging(log_file)
 
     print('\n' + '=' * 60)
-    print('Android World MAI-UI Parallel Evaluation')
+    print('Android World UI-Venus Parallel Evaluation')
     print('=' * 60)
     print(f'Config file: {args.config}')
     print(f'Num workers: {args.num_workers}')

@@ -17,3 +17,5 @@ pytest
 requests
 tenacity
 termcolor
+PyYAML
+pysqlite3-binary

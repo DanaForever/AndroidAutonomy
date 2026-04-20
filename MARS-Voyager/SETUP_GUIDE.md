@@ -82,7 +82,7 @@ If your setup differs, override these variables when running the evaluation scri
 Create a new conda environment for the evaluation:
 
 ```bash
-conda create -n uivoyager python=3.10
+conda create -n uivoyager python=3.11
 conda activate uivoyager
 ```
 

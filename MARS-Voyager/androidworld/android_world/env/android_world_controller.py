@@ -93,14 +93,25 @@ def get_a11y_tree(
   for attempt in range(max_retries):
     try:
       extras = env.accumulate_new_extras()  # pytype:disable=attribute-error
+      logging.warning(
+          'A11Y attempt %d/%d',
+          attempt + 1,
+          max_retries
+      )
+      logging.warning(
+          'A11Y attempt %d/%d',
+          attempt + 1,
+          max_retries
+      )
       forest = extras['accessibility_tree'][-1]
       return forest
     except KeyError as e:
-      logging.warning('Could not get a11y tree, retrying. KeyError: %s', e)
+      logging.warning('Could not get a11y tree, retrying.')
     except Exception as e:
-      logging.exception('Unexpected error while getting a11y tree: %s', e)
+      logging.exception('Unexpected error while getting a11y tree')
     time.sleep(sleep_duration)
 
+    
   if forest is None:
     raise RuntimeError('Could not get a11y tree.')
   return forest

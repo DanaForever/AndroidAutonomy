@@ -97,6 +97,41 @@ def _zombie_reaper_thread(stop_event):
         stop_event.wait(5)
 
 
+def _classify_task_outcomes(
+    assigned_tasks: List[str],
+    episodes: List[Dict[str, Any]],
+) -> Tuple[List[str], List[str], List[str]]:
+    """Classify task templates as success, failure, or unresolved for one attempt."""
+    task_outcomes: Dict[str, Dict[str, int]] = {
+        task: {'success': 0, 'failed': 0} for task in assigned_tasks
+    }
+
+    for episode in episodes or []:
+        task_name = episode.get('task_template')
+        if not task_name:
+            continue
+        task_entry = task_outcomes.setdefault(task_name, {'success': 0, 'failed': 0})
+        if episode.get('exception_info') is None and episode.get('is_successful', 0) > 0.5:
+            task_entry['success'] += 1
+        else:
+            task_entry['failed'] += 1
+
+    success_tasks: List[str] = []
+    failed_tasks: List[str] = []
+    unresolved_tasks: List[str] = []
+
+    for task in assigned_tasks:
+        outcome = task_outcomes.get(task, {'success': 0, 'failed': 0})
+        if outcome['failed'] > 0:
+            failed_tasks.append(task)
+        elif outcome['success'] > 0:
+            success_tasks.append(task)
+        else:
+            unresolved_tasks.append(task)
+
+    return success_tasks, failed_tasks, unresolved_tasks
+
+
 def worker_process(
     worker_id: int,
     tasks: List[str],
@@ -144,8 +179,11 @@ def worker_process(
         'total': 0,
         'failed_tasks': [],
         'success_tasks': [],
+        'unresolved_tasks': [],
         'error': None,
     }
+    runner = None
+    episodes: List[Dict[str, Any]] = []
     
     try:
         from eval.clients import get_llm_client
@@ -168,36 +206,41 @@ def worker_process(
         print(f'[Worker {worker_id}] Starting evaluation...')
         episodes = runner.run(suite)
         
-        for ep in episodes:
-            results['total'] += 1
-            task_name = ep.get('task_template', 'unknown')
-            is_success = ep.get('is_successful', 0)
-            
-            if ep.get('exception_info') is None:
-                if is_success > 0.5:
-                    results['success'] += 1
-                    results['success_tasks'].append(task_name)
-                else:
-                    results['failed_tasks'].append(task_name)
-        
-        results['episodes'] = episodes
-        
-        print(f'[Worker {worker_id}] Evaluation completed: {results["success"]}/{results["total"]}')
-        
-        if episodes:
-            print(f'\n[Worker {worker_id}] Detailed statistics:')
-            runner.get_results_summary()
-        
     except Exception as e:
         import traceback
         results['error'] = traceback.format_exc()
         print(f'[Worker {worker_id}] Error: {e}')
         traceback.print_exc()
+        if runner is not None:
+            episodes = list(getattr(runner, '_results', []) or [])
     
     finally:
+        results['episodes'] = episodes
+        results['total'] = len(episodes)
+        results['success'] = sum(
+            1
+            for ep in episodes
+            if ep.get('exception_info') is None and ep.get('is_successful', 0) > 0.5
+        )
+        (
+            results['success_tasks'],
+            results['failed_tasks'],
+            results['unresolved_tasks'],
+        ) = _classify_task_outcomes(tasks, episodes)
+
+        print(
+            f'[Worker {worker_id}] Evaluation completed: '
+            f'{results["success"]}/{results["total"]} '
+            f'(unresolved tasks: {len(results["unresolved_tasks"])})'
+        )
+        if episodes and runner is not None:
+            print(f'\n[Worker {worker_id}] Detailed statistics:')
+            runner.get_results_summary()
+
         print(f'[Worker {worker_id}] Closing runner...')
         try:
-            runner.close()
+            if runner is not None:
+                runner.close()
         except Exception as e:
             print(f'[Worker {worker_id}] Error during close: {e}')
         print(f'[Worker {worker_id}] Runner closed.')
@@ -300,6 +343,29 @@ def run_parallel_eval(
             print(f'[Main] Got result from worker {result["worker_id"]}')
         except Exception:
             break
+
+    reported_worker_ids = {result['worker_id'] for result in all_results}
+    for worker_id, chunk in enumerate(task_chunks):
+        if worker_id in reported_worker_ids:
+            continue
+        process = processes[worker_id]
+        exit_code = process.exitcode
+        synthetic_error = (
+            f'Worker exited before reporting results (exit code {exit_code})'
+        )
+        print(f'[Main] Synthesizing unresolved result for worker {worker_id}: {synthetic_error}')
+        all_results.append({
+            'worker_id': worker_id,
+            'repeat_id': repeat_id,
+            'tasks': chunk,
+            'success': 0,
+            'total': 0,
+            'failed_tasks': [],
+            'success_tasks': [],
+            'unresolved_tasks': list(chunk),
+            'error': synthetic_error,
+            'episodes': [],
+        })
     
     # Safely close all processes after completion
     for p in processes:
@@ -539,4 +605,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

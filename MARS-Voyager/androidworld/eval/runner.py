@@ -5,7 +5,7 @@ import os
 import random
 import time
 import traceback
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from absl import logging
 import pandas as pd
@@ -44,6 +44,8 @@ class EvalRunner:
         self.agent: Optional[BaseEvalAgent] = None
         self._results: List[Dict[str, Any]] = []
         self.worker_id: Optional[int] = config.get('worker_id')
+        self._llm_client = None
+        self._repeat_id: int = 0
     
     def setup_env(self) -> interface.AsyncEnv:
         """Initialize Android environment"""
@@ -181,33 +183,22 @@ class EvalRunner:
                 
                 if instance_name in completed_tasks:
                     results.extend(completed_tasks[instance_name])
-                    self._results = list(results)
                     continue
                 if instance_name in failed_tasks:
                     results.extend(failed_tasks[instance_name])
-                    self._results = list(results)
                     continue
-                
-                episode = self._run_task(instance, demo_mode)
 
-                # Reactive recovery: if the task failed due to a dead emulator, restart and retry once.
-                if (
-                    episode.get(constants.EpisodeConstants.EXCEPTION_INFO)
-                    and self._last_exc is not None
-                    and self._is_emulator_dead(self._last_exc)
-                ):
-                    self._restart_env(
-                        llm_client=getattr(self, '_llm_client', None),
-                        repeat_id=getattr(self, '_repeat_id', 0),
-                    )
-                    episode = self._run_task(instance, demo_mode)
+                episode, exc = self._run_task(instance, demo_mode)
+
+                if exc is not None and self._is_emulator_dead(exc):
+                    self._restart_env()
+                    episode, exc = self._run_task(instance, demo_mode)
 
                 episode[constants.EpisodeConstants.AGENT_NAME] = self.agent.name
                 episode[constants.EpisodeConstants.INSTANCE_ID] = i
-                
+
                 checkpointer.save_episodes([episode], instance_name)
                 results.append({k: episode[k] for k in metadata_fields})
-                self._results = list(results)
                 
                 if episode[constants.EpisodeConstants.EXCEPTION_INFO] is None:
                     correct += episode[constants.EpisodeConstants.IS_SUCCESSFUL]
@@ -219,12 +210,19 @@ class EvalRunner:
         return results
     
     def _is_emulator_dead(self, exc: Exception) -> bool:
-        """Return True if the exception indicates the emulator has disconnected."""
-        msg = str(exc).lower()
-        return isinstance(exc, android_errors.AdbControllerError) and 'not found' in msg
+        """Return True if the emulator process has exited."""
+        if not isinstance(exc, android_errors.AdbControllerError):
+            return False
+        try:
+            launcher = self.env.controller._env._coordinator._simulator._launcher
+            if launcher is None:
+                return False
+            return launcher._emulator is not None and launcher._emulator.poll() is not None
+        except Exception:
+            return False
 
-    def _restart_env(self, llm_client=None, repeat_id: int = 0) -> None:
-        """Close the current env and re-initialize it (plus agent if llm_client given)."""
+    def _restart_env(self) -> None:
+        """Close the current env and re-initialize it."""
         self._log_and_print('Emulator lost — restarting environment...')
         try:
             if self.env:
@@ -236,18 +234,17 @@ class EvalRunner:
 
         time.sleep(5)
         self.setup_env()
-        if llm_client is not None:
-            self.setup_agent(llm_client, repeat_id=repeat_id)
+        if self._llm_client is not None:
+            self.setup_agent(self._llm_client, repeat_id=self._repeat_id)
         self._log_and_print('Environment restarted.')
 
     def _run_task(
         self,
         task: task_eval.TaskEval,
         demo_mode: bool,
-    ) -> Dict[str, Any]:
-        """Run single task"""
+    ) -> Tuple[Dict[str, Any], Optional[Exception]]:
+        """Run single task, returning (episode, exception_or_None)."""
         start = time.time()
-        self._last_exc: Optional[Exception] = None
 
         try:
             if task.start_on_home_screen:
@@ -294,15 +291,14 @@ class EvalRunner:
             }
             
             task.tear_down(self.env)
-            return result
-            
+            return result, None
+
         except Exception as e:
-            self._last_exc = e
             self._log_and_print(f'Task error, skipping {task.name}: {e}')
             traceback.print_exc()
             return self._create_failed_result(
                 task.name, task.goal, traceback.format_exc(), time.time() - start
-            )
+            ), e
     
     def _run_episode(self, task: task_eval.TaskEval) -> episode_runner.EpisodeResult:
         """Run an episode"""

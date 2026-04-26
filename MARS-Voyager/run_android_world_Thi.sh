@@ -41,6 +41,9 @@ MAIN_LOG="${LOG_DIR}/eval_${MODEL_NAME}_${NUM_WORKERS}workers.log"
 PID_FILE="${LOG_DIR}/eval.pid"
 EMU_PID_FILE="${LOG_DIR}/emulator_pids.txt"
 AVD_COPIES_FILE="${LOG_DIR}/avd_copies.txt"
+TUNNEL_PID_FILE="${LOG_DIR}/ssh_tunnel.pid"
+RETRY_STATE_FILE="${LOG_DIR}/retry_summary.json"
+RETRY_TASK_DIR="${LOG_DIR}/retry_task_lists"
 
 OUTPUT_PATH="${PROJECT_ROOT}/eval_results/${MODEL_NAME}/results/${TIMESTAMP}"
 
@@ -66,12 +69,260 @@ EMU_WAIT_TIME=90
 EMU_START_MAX_RETRIES=3
 
 ADB_SERVER_START_PORT="${ADB_SERVER_START_PORT:-5037}"
+VLLM_BASE_URL="${VLLM_BASE_URL:-http://localhost:9000}"
+VLLM_MODELS_ENDPOINT="${VLLM_BASE_URL%/}/v1/models"
+SSH_TUNNEL_HOST="${SSH_TUNNEL_HOST:-5880}"
+SSH_TUNNEL_PORT_SPEC="${SSH_TUNNEL_PORT_SPEC:-9000:localhost:9000}"
 
 # ==================== Helper Functions ====================
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 die() { log "Error: $*"; exit 1; }
+
+count_tasks_in_file() {
+    local task_file=$1
+    [[ -f "$task_file" ]] || { echo 0; return 0; }
+    python - "$task_file" <<'PY'
+import sys
+from pathlib import Path
+
+task_file = Path(sys.argv[1])
+tasks = [
+    line.strip()
+    for line in task_file.read_text(encoding='utf-8').splitlines()
+    if line.strip() and not line.strip().startswith('#')
+]
+print(len(tasks))
+PY
+}
+
+write_retry_initial_tasks() {
+    local task_file=$1
+    python - "$CONFIG_FILE" "$task_file" <<'PY'
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+task_file = Path(sys.argv[2])
+
+from eval.configs import load_config
+from android_world import registry
+
+config = load_config(str(config_path))
+configured_tasks = config.get('eval', {}).get('tasks')
+suite_family = config.get('eval', {}).get('suite_family', 'android_world')
+
+if configured_tasks:
+    tasks = list(dict.fromkeys(configured_tasks))
+else:
+    task_registry = registry.TaskRegistry()
+    reg = task_registry.get_registry(family=suite_family)
+    tasks = sorted(reg.keys())
+
+task_file.parent.mkdir(parents=True, exist_ok=True)
+task_file.write_text('\n'.join(tasks) + ('\n' if tasks else ''), encoding='utf-8')
+print(len(tasks))
+PY
+}
+
+create_retry_fallback_summary() {
+    local repeat_id=$1
+    local task_file=$2
+    local summary_file=$3
+    python - "$repeat_id" "$task_file" "$summary_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repeat_id = int(sys.argv[1])
+task_file = Path(sys.argv[2])
+summary_file = Path(sys.argv[3])
+tasks = [
+    line.strip()
+    for line in task_file.read_text(encoding='utf-8').splitlines()
+    if line.strip() and not line.strip().startswith('#')
+]
+
+summary = {
+    'total_time_seconds': 0,
+    'total_tasks': 0,
+    'total_success': 0,
+    'success_rate': 0,
+    'num_workers': 0,
+    'repeat_id': repeat_id,
+    'worker_results': [{
+        'worker_id': -1,
+        'repeat_id': repeat_id,
+        'tasks': tasks,
+        'success': 0,
+        'total': 0,
+        'failed_tasks': [],
+        'success_tasks': [],
+        'unresolved_tasks': tasks,
+        'error': 'Evaluation summary missing; all tasks treated as unresolved.',
+    }],
+}
+
+summary_file.write_text(json.dumps(summary, indent=2), encoding='utf-8')
+PY
+}
+
+process_retry_summary() {
+    local summary_file=$1
+    local state_file=$2
+    local next_task_file=$3
+    local repeat_id=$4
+    local max_streak=$5
+    python - "$summary_file" "$state_file" "$next_task_file" "$repeat_id" "$max_streak" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+summary_file = Path(sys.argv[1])
+state_file = Path(sys.argv[2])
+next_task_file = Path(sys.argv[3])
+repeat_id = int(sys.argv[4])
+max_streak = int(sys.argv[5])
+
+if state_file.exists():
+    state = json.loads(state_file.read_text(encoding='utf-8'))
+else:
+    state = {
+        'max_consecutive_failures': max_streak,
+        'attempts_processed': [],
+        'tasks': {},
+    }
+
+summary = json.loads(summary_file.read_text(encoding='utf-8'))
+worker_results = summary.get('worker_results', [])
+
+assigned = set()
+success = set()
+failed = set()
+unresolved = set()
+
+for worker in worker_results:
+    tasks = set(worker.get('tasks') or [])
+    success_tasks = set(worker.get('success_tasks') or [])
+    failed_tasks = set(worker.get('failed_tasks') or [])
+    unresolved_tasks = set(worker.get('unresolved_tasks') or [])
+
+    assigned.update(tasks)
+    success.update(success_tasks)
+    failed.update(failed_tasks)
+    unresolved.update(unresolved_tasks)
+
+    uncategorized = tasks - success_tasks - failed_tasks - unresolved_tasks
+    unresolved.update(uncategorized)
+
+success -= failed | unresolved
+
+for task in sorted(assigned):
+    task_state = state['tasks'].setdefault(task, {
+        'final_status': 'pending',
+        'attempt_count': 0,
+        'consecutive_failures': 0,
+        'attempt_history': [],
+    })
+
+    if task in success:
+        attempt_status = 'success'
+    elif task in unresolved:
+        attempt_status = 'unresolved'
+    else:
+        attempt_status = 'failed'
+
+    task_state['attempt_count'] += 1
+    task_state['attempt_history'].append({
+        'attempt_id': repeat_id,
+        'status': attempt_status,
+    })
+    task_state['last_status'] = attempt_status
+
+    if attempt_status == 'success':
+        task_state['final_status'] = 'success'
+        task_state['consecutive_failures'] = 0
+    else:
+        if task_state.get('final_status') != 'success':
+            task_state['consecutive_failures'] += 1
+            if task_state['consecutive_failures'] >= max_streak:
+                task_state['final_status'] = 'failed'
+            else:
+                task_state['final_status'] = 'pending'
+
+pending_tasks = sorted(
+    task for task, task_state in state['tasks'].items()
+    if task_state.get('final_status') == 'pending'
+)
+successful_tasks = sorted(
+    task for task, task_state in state['tasks'].items()
+    if task_state.get('final_status') == 'success'
+)
+failed_tasks = sorted(
+    task for task, task_state in state['tasks'].items()
+    if task_state.get('final_status') == 'failed'
+)
+
+state['attempts_processed'] = sorted(set(state.get('attempts_processed', [])) | {repeat_id})
+state['last_processed_repeat_id'] = repeat_id
+state['pending_tasks'] = pending_tasks
+state['successful_tasks'] = successful_tasks
+state['failed_tasks'] = failed_tasks
+
+next_task_file.parent.mkdir(parents=True, exist_ok=True)
+next_task_file.write_text(
+    '\n'.join(pending_tasks) + ('\n' if pending_tasks else ''),
+    encoding='utf-8',
+)
+state_file.write_text(json.dumps(state, indent=2), encoding='utf-8')
+print(len(pending_tasks))
+PY
+}
+
+is_vllm_ready() {
+    curl --silent --show-error --max-time 10 "$VLLM_MODELS_ENDPOINT" >/dev/null 2>&1
+}
+
+start_ssh_tunnel() {
+    log "vLLM is unreachable at $VLLM_MODELS_ENDPOINT, starting SSH tunnel via $SSH_TUNNEL_HOST..."
+    ssh -N \
+        -L "$SSH_TUNNEL_PORT_SPEC" \
+        -o ExitOnForwardFailure=yes \
+        -o ServerAliveInterval=60 \
+        -o ServerAliveCountMax=3 \
+        "$SSH_TUNNEL_HOST" >/dev/null 2>&1 &
+
+    local tunnel_pid=$!
+    echo "$tunnel_pid" > "$TUNNEL_PID_FILE"
+    sleep 3
+
+    if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+        rm -f "$TUNNEL_PID_FILE"
+        log "[FAIL] SSH tunnel process exited immediately"
+        return 1
+    fi
+
+    if ! is_vllm_ready; then
+        log "[FAIL] SSH tunnel started but $VLLM_MODELS_ENDPOINT is still unreachable"
+        kill "$tunnel_pid" 2>/dev/null || true
+        rm -f "$TUNNEL_PID_FILE"
+        return 1
+    fi
+
+    log "[OK] SSH tunnel ready: $SSH_TUNNEL_PORT_SPEC via $SSH_TUNNEL_HOST"
+}
+
+ensure_vllm_connection() {
+    log "Checking vLLM connectivity: $VLLM_MODELS_ENDPOINT"
+    if is_vllm_ready; then
+        log "[OK] vLLM is reachable"
+        return 0
+    fi
+
+    [[ -f "$TUNNEL_PID_FILE" ]] && rm -f "$TUNNEL_PID_FILE"
+    start_ssh_tunnel || return 1
+}
 
 reap_zombies() {
     local zombie_count=$(ps aux | awk '{if ($8 ~ /Z/) print $2}' | wc -l)
@@ -169,6 +420,7 @@ stop_all_adb_servers() {
 }
 
 cleanup() {
+    local preserve_tunnel=${1:-0}
     log "Cleaning up resources..."
     reap_zombies
     kill_pids "$EMU_PID_FILE"
@@ -181,6 +433,10 @@ cleanup() {
     pkill -9 -f "qemu-system-x86" 2>/dev/null || true
     stop_all_adb_servers
     cleanup_avd_copies
+    if [[ "$preserve_tunnel" != "1" ]]; then
+        kill_pids "$TUNNEL_PID_FILE"
+        rm -f "$TUNNEL_PID_FILE"
+    fi
     rm -f "$EMU_PID_FILE"
     wait 2>/dev/null || true
     reap_zombies
@@ -217,8 +473,8 @@ start_emulators() {
         for attempt in $(seq 1 $EMU_START_MAX_RETRIES); do
             ANDROID_ADB_SERVER_PORT="$adb_server_port" "$EMULATOR_PATH" \
                 -adb-path "$ADB_PATH" \
-                -gpu host \
-                -no-audio -no-skin \
+                -gpu swiftshader_indirect \
+                -no-audio -no-skin -no-window \
                 -show-kernel -verbose \
                 -avd "$worker_avd" \
                 -memory $EMU_MEMORY \
@@ -306,11 +562,11 @@ run_eval() {
 
     local cmd=(
         python test_android_world.py
-        --config "$CONFIG_FILE"
-        --num_workers "$workers"
-        --start_port "$START_PORT"
-        --adb_server_start_port "$ADB_SERVER_START_PORT"
-        --log_dir "$LOG_DIR"
+        --config "$CONFIG_FILE" \
+        --num_workers "$workers" \
+        --start_port "$START_PORT" \
+        --adb_server_start_port "$ADB_SERVER_START_PORT" \
+        --log_dir "$LOG_DIR" \
         --repeat_id "$repeat_id"
     )
     [[ -n "$tasks_file" ]] && cmd+=(--tasks_file "$tasks_file")
@@ -321,6 +577,92 @@ run_eval() {
     local ret=$?
     log "Evaluation completed (exit code: $ret)"
     return $ret
+}
+
+run_round_attempt() {
+    local repeat_id=$1
+    local tasks_file=${2:-}
+    local round_label=${3:-$((repeat_id + 1))}
+
+    log "========================================"
+    log "Starting round ${round_label}"
+    log "========================================"
+
+    if [[ -n "$tasks_file" ]]; then
+        local task_count
+        task_count=$(count_tasks_in_file "$tasks_file")
+        log "Round task file: $tasks_file ($task_count tasks)"
+    fi
+
+    log "Cleaning up previous round..."
+    cleanup 1
+    rm -f "$EMU_PID_FILE"
+    sleep 5
+
+    start_emulators
+    local failed=$?
+    [[ $((NUM_WORKERS - failed)) -eq 0 ]] && { log "Error: All emulators failed to start"; return 1; }
+    [[ $failed -gt 0 ]] && log "Warning: $failed emulators failed to start"
+
+    wait_emulators || { log "Error: Emulators not ready, skipping round"; return 1; }
+
+    run_eval "$ALIVE_WORKERS" "$repeat_id" "$tasks_file" || log "Round ${round_label} evaluation error"
+
+    reap_zombies
+    log "Round ${round_label} completed"
+    return 0
+}
+
+run_standard_mode() {
+    for repeat_id in $(seq 0 $((N_REPEATS - 1))); do
+        run_round_attempt "$repeat_id" "" "$((repeat_id + 1))/$N_REPEATS" || true
+    done
+
+    log "All $N_REPEATS rounds completed!"
+}
+
+run_retry_mode() {
+    local repeat_id=0
+    local current_tasks_file="${RETRY_TASK_DIR}/attempt_00_tasks.txt"
+    local next_tasks_file
+    local pending_count
+
+    rm -f "$RETRY_STATE_FILE"
+    mkdir -p "$RETRY_TASK_DIR"
+
+    local initial_count
+    initial_count=$(write_retry_initial_tasks "$current_tasks_file") || return 1
+    log "Retry mode enabled: initial task set has $initial_count tasks"
+
+    while true; do
+        local current_count
+        current_count=$(count_tasks_in_file "$current_tasks_file")
+        if [[ "$current_count" -eq 0 ]]; then
+            log "Retry mode: no pending tasks left"
+            break
+        fi
+
+        run_round_attempt "$repeat_id" "$current_tasks_file" || true
+
+        local summary_file="${LOG_DIR}/parallel_summary_repeat_${repeat_id}.json"
+        if [[ ! -f "$summary_file" ]]; then
+            log "Retry mode: summary missing for repeat $repeat_id, creating unresolved fallback"
+            create_retry_fallback_summary "$repeat_id" "$current_tasks_file" "$summary_file"
+        fi
+
+        printf -v next_tasks_file "%s/attempt_%02d_tasks.txt" "$RETRY_TASK_DIR" $((repeat_id + 1))
+        pending_count=$(process_retry_summary "$summary_file" "$RETRY_STATE_FILE" "$next_tasks_file" "$repeat_id" "$FAILED_TASK_MAX_STREAK")
+        log "Retry mode: $pending_count task(s) still pending after attempt $repeat_id"
+
+        if [[ "$pending_count" -eq 0 ]]; then
+            break
+        fi
+
+        current_tasks_file="$next_tasks_file"
+        repeat_id=$((repeat_id + 1))
+    done
+
+    log "Retry mode completed. Final summary: $RETRY_STATE_FILE"
 }
 
 # ==================== Pre-flight Checks ====================
@@ -356,13 +698,18 @@ print_header
     exit 1
 }
 [[ ! -f "$EMULATOR_PATH" ]] && die "Emulator not found: $EMULATOR_PATH"
+command -v curl >/dev/null 2>&1 || die "curl not found"
+command -v ssh >/dev/null 2>&1 || die "ssh not found"
 
 echo "$ANDROID_AVD_HOME/$AVD_NAME.avd"
 [[ ! -d "$ANDROID_AVD_HOME/$AVD_NAME.avd" ]] && die "AVD not found: $AVD_NAME"
 
 mkdir -p "$LOG_DIR/emulators"
 mkdir -p "$OUTPUT_PATH"
+mkdir -p "$RETRY_TASK_DIR"
 rm -f "$EMU_PID_FILE"
+rm -f "$TUNNEL_PID_FILE"
+rm -f "$RETRY_STATE_FILE"
 
 # Copy config to output dir as runtime config
 RUNTIME_CONFIG_FILE="${OUTPUT_PATH}/config.yaml"
@@ -381,34 +728,13 @@ CONFIG_FILE="$RUNTIME_CONFIG_FILE"
 (
     trap cleanup EXIT INT TERM
 
-    for repeat_id in $(seq 0 $((N_REPEATS - 1))); do
-        log "========================================"
-        log "Starting round $((repeat_id + 1))/$N_REPEATS"
-        log "========================================"
+    ensure_vllm_connection || die "Unable to reach vLLM at $VLLM_MODELS_ENDPOINT"
 
-        # Cleanup previous round
-        log "Cleaning up previous round..."
-        cleanup
-        rm -f "$EMU_PID_FILE"
-        sleep 5
-
-        # Start emulators
-        start_emulators
-        failed=$?
-        [[ $((NUM_WORKERS - failed)) -eq 0 ]] && { log "Error: All emulators failed to start"; continue; }
-        [[ $failed -gt 0 ]] && log "Warning: $failed emulators failed to start"
-
-        # Wait for emulators
-        wait_emulators || { log "Error: Emulators not ready, skipping round"; continue; }
-
-        # Run evaluation
-        run_eval "$ALIVE_WORKERS" "$repeat_id" || log "Round $((repeat_id + 1)) evaluation error"
-
-        reap_zombies
-        log "Round $((repeat_id + 1))/$N_REPEATS completed"
-    done
-
-    log "All $N_REPEATS rounds completed!"
+    if [[ "$RETRY_FAILED_TASKS" == "1" ]]; then
+        run_retry_mode
+    else
+        run_standard_mode
+    fi
 ) > "$MAIN_LOG" 2>&1 &
 
 MAIN_PID=$!

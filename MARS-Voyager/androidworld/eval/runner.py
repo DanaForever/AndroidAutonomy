@@ -5,7 +5,7 @@ import os
 import random
 import time
 import traceback
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from absl import logging
 import pandas as pd
@@ -18,6 +18,7 @@ from android_world.env import env_launcher
 from android_world.env import interface
 from android_world.task_evals import task_eval
 from android_world.task_evals.miniwob import miniwob_base
+from android_env.components import errors as android_errors
 
 from eval.agents.base_agent import BaseEvalAgent
 
@@ -43,6 +44,8 @@ class EvalRunner:
         self.agent: Optional[BaseEvalAgent] = None
         self._results: List[Dict[str, Any]] = []
         self.worker_id: Optional[int] = config.get('worker_id')
+        self._llm_client = None
+        self._repeat_id: int = 0
     
     def setup_env(self) -> interface.AsyncEnv:
         """Initialize Android environment"""
@@ -75,10 +78,12 @@ class EvalRunner:
             Agent instance
         """
         from eval.agents import get_agent
-        
+
         agent_config = self.config.get('agent', {})
         self.agent = get_agent(agent_config, self.env, llm_client, repeat_id=repeat_id)
-        
+        self._llm_client = llm_client
+        self._repeat_id = repeat_id
+
         logging.info(f'Agent initialized: {self.agent.name}, repeat_id: {repeat_id}')
         return self.agent
     
@@ -136,6 +141,7 @@ class EvalRunner:
                 checkpoint_dir = checkpointer_lib.create_run_directory(output_path)
             checkpointer = checkpointer_lib.IncrementalCheckpointer(checkpoint_dir)
         
+        self._results = []
         logging.info(f'Starting evaluation, checkpoint dir: {checkpointer.directory}')
         
         results = self._run_suite(suite, checkpointer, demo_mode)
@@ -166,6 +172,7 @@ class EvalRunner:
         )
         
         results: List[Dict[str, Any]] = []
+        self._results = results
         correct, total = 0, 0
         
         for name, instances in suite.items():
@@ -180,11 +187,16 @@ class EvalRunner:
                 if instance_name in failed_tasks:
                     results.extend(failed_tasks[instance_name])
                     continue
-                
-                episode = self._run_task(instance, demo_mode)
+
+                episode, exc = self._run_task(instance, demo_mode)
+
+                if exc is not None and self._is_emulator_dead(exc):
+                    self._restart_env()
+                    episode, exc = self._run_task(instance, demo_mode)
+
                 episode[constants.EpisodeConstants.AGENT_NAME] = self.agent.name
                 episode[constants.EpisodeConstants.INSTANCE_ID] = i
-                
+
                 checkpointer.save_episodes([episode], instance_name)
                 results.append({k: episode[k] for k in metadata_fields})
                 
@@ -197,12 +209,41 @@ class EvalRunner:
         
         return results
     
+    def _is_emulator_dead(self, exc: Exception) -> bool:
+        """Return True if the emulator process has exited."""
+        if not isinstance(exc, android_errors.AdbControllerError):
+            return False
+        try:
+            launcher = self.env.controller._env._coordinator._simulator._launcher
+            if launcher is None:
+                return False
+            return launcher._emulator is not None and launcher._emulator.poll() is not None
+        except Exception:
+            return False
+
+    def _restart_env(self) -> None:
+        """Close the current env and re-initialize it."""
+        self._log_and_print('Emulator lost — restarting environment...')
+        try:
+            if self.env:
+                self.env.close()
+        except Exception:
+            pass
+        self.env = None
+        self.agent = None
+
+        time.sleep(5)
+        self.setup_env()
+        if self._llm_client is not None:
+            self.setup_agent(self._llm_client, repeat_id=self._repeat_id)
+        self._log_and_print('Environment restarted.')
+
     def _run_task(
         self,
         task: task_eval.TaskEval,
         demo_mode: bool,
-    ) -> Dict[str, Any]:
-        """Run single task"""
+    ) -> Tuple[Dict[str, Any], Optional[Exception]]:
+        """Run single task, returning (episode, exception_or_None)."""
         start = time.time()
 
         try:
@@ -250,14 +291,14 @@ class EvalRunner:
             }
             
             task.tear_down(self.env)
-            return result
-            
+            return result, None
+
         except Exception as e:
             self._log_and_print(f'Task error, skipping {task.name}: {e}')
             traceback.print_exc()
             return self._create_failed_result(
                 task.name, task.goal, traceback.format_exc(), time.time() - start
-            )
+            ), e
     
     def _run_episode(self, task: task_eval.TaskEval) -> episode_runner.EpisodeResult:
         """Run an episode"""

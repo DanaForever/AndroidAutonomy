@@ -23,7 +23,7 @@ AVD_NAME="${AVD_NAME:-AndroidWorldAvd}"
 N_REPEATS="${N_REPEATS:-1}"
 TIMESTAMP=$(date +"%Y%m%d%H%M%S")
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
-RETRY_FAILED_TASKS="${RETRY_FAILED_TASKS:-0}"
+RETRY_FAILED_TASKS="${RETRY_FAILED_TASKS:-1}"
 FAILED_TASK_MAX_STREAK="${FAILED_TASK_MAX_STREAK:-5}"
 TASK_RANDOM_SEED="${TASK_RANDOM_SEED:-}"
 
@@ -41,6 +41,7 @@ MAIN_LOG="${LOG_DIR}/eval_${MODEL_NAME}_${NUM_WORKERS}workers.log"
 PID_FILE="${LOG_DIR}/eval.pid"
 EMU_PID_FILE="${LOG_DIR}/emulator_pids.txt"
 AVD_COPIES_FILE="${LOG_DIR}/avd_copies.txt"
+TUNNEL_PID_FILE="${LOG_DIR}/ssh_tunnel.pid"
 RETRY_STATE_FILE="${LOG_DIR}/retry_summary.json"
 RETRY_TASK_DIR="${LOG_DIR}/retry_task_lists"
 
@@ -68,262 +69,16 @@ EMU_WAIT_TIME=90
 EMU_START_MAX_RETRIES=3
 
 ADB_SERVER_START_PORT="${ADB_SERVER_START_PORT:-5037}"
+VLLM_BASE_URL="${VLLM_BASE_URL:-http://localhost:9000}"
+VLLM_MODELS_ENDPOINT="${VLLM_BASE_URL%/}/v1/models"
+SSH_TUNNEL_HOST="${SSH_TUNNEL_HOST:-5880}"
+SSH_TUNNEL_PORT_SPEC="${SSH_TUNNEL_PORT_SPEC:-9000:localhost:9000}"
 
 # ==================== Helper Functions ====================
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 die() { log "Error: $*"; exit 1; }
-
-reap_zombies() {
-    local zombie_count=$(ps aux | awk '{if ($8 ~ /Z/) print $2}' | wc -l)
-    if [[ $zombie_count -gt 100 ]]; then
-        log "[WARNING] Found $zombie_count zombie processes, attempting to reap..."
-        wait 2>/dev/null || true
-        for ppid in $(ps aux | awk '{if ($8 ~ /Z/) print $3}' | sort -u); do
-            [[ -n "$ppid" && "$ppid" != "1" ]] && kill -SIGCHLD "$ppid" 2>/dev/null || true
-        done
-        sleep 1
-        local new_count=$(ps aux | awk '{if ($8 ~ /Z/) print $2}' | wc -l)
-        log "[INFO] Zombie count: before=$zombie_count, after=$new_count"
-    fi
-}
-
-# ==================== AVD Management ====================
-
-create_avd_copy() {
-    local worker_id=$1
-    local target_avd="${AVD_NAME}_worker_${worker_id}"
-    local source_dir="$ANDROID_AVD_HOME/${AVD_NAME}.avd"
-    local target_dir="$ANDROID_AVD_HOME/${target_avd}.avd"
-    local source_ini="$ANDROID_AVD_HOME/${AVD_NAME}.ini"
-    local target_ini="$ANDROID_AVD_HOME/${target_avd}.ini"
-
-    if [[ -d "$target_dir" && -f "$target_ini" ]]; then
-        log "  [SKIP] AVD copy already exists: $target_avd"
-        echo "$target_avd" >> "$AVD_COPIES_FILE"
-        return 0
-    fi
-
-    rm -rf "$target_dir" "$target_ini"
-
-    log "  [CREATE] AVD copy: $target_avd"
-    cp -r "$source_dir" "$target_dir"
-    cp "$source_ini" "$target_ini"
-    sed -i "s|path=.*|path=${target_dir}|g" "$target_ini"
-    sed -i "s|path.rel=.*|path.rel=avd/${target_avd}.avd|g" "$target_ini"
-    [[ -f "$target_dir/hardware-qemu.ini" ]] && \
-        sed -i "s|${AVD_NAME}|${target_avd}|g" "$target_dir/hardware-qemu.ini"
-
-    echo "$target_avd" >> "$AVD_COPIES_FILE"
-}
-
-cleanup_avd_copies() {
-    [[ ! -f "$AVD_COPIES_FILE" ]] && return
-    log "Cleaning up AVD copies..."
-    while read -r avd_name; do
-        [[ "$avd_name" == *"_worker_"* ]] || continue
-        rm -rf "$ANDROID_AVD_HOME/${avd_name}.avd" "$ANDROID_AVD_HOME/${avd_name}.ini"
-        log "  [DELETE] $avd_name"
-    done < "$AVD_COPIES_FILE"
-    rm -f "$AVD_COPIES_FILE"
-}
-
-# ==================== Emulator Management ====================
-
-kill_pids() {
-    local pid_file=$1
-    [[ ! -f "$pid_file" ]] && return
-    while read -r pid; do
-        [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
-    done < "$pid_file"
-    sleep 3
-    while read -r pid; do
-        [[ -n "$pid" ]] && kill -9 "$pid" 2>/dev/null || true
-    done < "$pid_file"
-}
-
-start_adb_server() {
-    local worker_id=$1
-    local adb_server_port=$((ADB_SERVER_START_PORT + worker_id))
-    timeout 10 "$ADB_PATH" -P "$adb_server_port" kill-server 2>/dev/null || true
-    sleep 1
-    timeout 15 "$ADB_PATH" -P "$adb_server_port" start-server 2>/dev/null || {
-        log "  [WARN] Worker $worker_id: ADB server start timed out on port $adb_server_port"
-        return 1
-    }
-    log "  [ADB] Worker $worker_id: ADB server started on port $adb_server_port"
-}
-
-stop_all_adb_servers() {
-    log "Stopping all ADB servers..."
-    for i in $(seq 0 $((NUM_WORKERS - 1))); do
-        local adb_server_port=$((ADB_SERVER_START_PORT + i))
-        timeout 10 "$ADB_PATH" -P "$adb_server_port" kill-server 2>/dev/null &
-    done
-    timeout 10 "$ADB_PATH" kill-server 2>/dev/null &
-    local wait_start=$SECONDS
-    while [[ $((SECONDS - wait_start)) -lt 30 ]] && jobs -r | grep -q .; do
-        sleep 1
-    done
-    pkill -9 -f "adb.*kill-server" 2>/dev/null || true
-    log "All ADB servers stopped"
-}
-
-cleanup() {
-    log "Cleaning up resources..."
-    reap_zombies
-    kill_pids "$EMU_PID_FILE"
-    pkill -f "emulator.*${AVD_NAME}" 2>/dev/null || true
-    pkill -f "python.*test_android_world.py" 2>/dev/null || true
-    sleep 2
-    pkill -9 -f "python.*test_android_world.py" 2>/dev/null || true
-    pkill -f "qemu-system-x86" 2>/dev/null || true
-    sleep 1
-    pkill -9 -f "qemu-system-x86" 2>/dev/null || true
-    stop_all_adb_servers
-    cleanup_avd_copies
-    rm -f "$EMU_PID_FILE"
-    wait 2>/dev/null || true
-    reap_zombies
-    log "Cleanup completed"
-}
-
-start_emulators() {
-    log "Starting $NUM_WORKERS emulators..."
-    local failed=0
-
-    log "Creating AVD copies..."
-    rm -f "$AVD_COPIES_FILE"
-    for i in $(seq 0 $((NUM_WORKERS - 1))); do
-        create_avd_copy "$i" || failed=$((failed + 1))
-    done
-    [[ $failed -gt 0 ]] && { log "Failed to create AVD copies: $failed"; return $failed; }
-
-    log "Starting independent ADB servers..."
-    for i in $(seq 0 $((NUM_WORKERS - 1))); do
-        start_adb_server "$i"
-    done
-    sleep 2
-
-    failed=0
-    for i in $(seq 0 $((NUM_WORKERS - 1))); do
-        local console_port=$((START_PORT + i * 2))
-        local adb_port=$((console_port + 1))
-        local grpc_port=$((8554 + i))
-        local adb_server_port=$((ADB_SERVER_START_PORT + i))
-        local worker_avd="${AVD_NAME}_worker_${i}"
-        local emu_log="${LOG_DIR}/emulators/emu_${i}_port_${console_port}.log"
-
-        local started=false
-        for attempt in $(seq 1 $EMU_START_MAX_RETRIES); do
-            ANDROID_ADB_SERVER_PORT="$adb_server_port" "$EMULATOR_PATH" \
-                -adb-path "$ADB_PATH" \
-                -gpu host \
-                -no-audio -no-skin \
-                -show-kernel -verbose \
-                -avd "$worker_avd" \
-                -memory $EMU_MEMORY \
-                -cores $EMU_CORES \
-                -grpc "$grpc_port" \
-                -ports "${console_port},${adb_port}" \
-                -snapshot default_boot \
-                -feature AllowSnapshotMigration,MigratableSnapshotSave \
-                > "$emu_log" 2>&1 &
-
-            local emu_pid=$!
-            echo "$emu_pid" >> "$EMU_PID_FILE"
-            sleep 5
-
-            if kill -0 "$emu_pid" 2>/dev/null; then
-                log "  [OK] Worker $i: avd=$worker_avd, ports=($console_port,$adb_port,$grpc_port), adb_server=$adb_server_port, pid=$emu_pid"
-                started=true
-                break
-            else
-                log "  [FAIL] Worker $i failed to start (attempt $attempt/$EMU_START_MAX_RETRIES)"
-                # [[ -f "$emu_log" ]] && tail -3 "$emu_log" | sed 's/^/    /'
-                [[ -f "$emu_log" ]] && { echo "---- emulator log ($emu_log) ----"; tail -50 "$emu_log"; echo "-------------------------------"; }
-                if [[ $attempt -lt $EMU_START_MAX_RETRIES ]]; then
-                    log "  [RETRY] Worker $i: retrying in 3s..."
-                    sleep 3
-                fi
-            fi
-        done
-
-        if [[ "$started" != "true" ]]; then
-            log "  [GIVE UP] Worker $i: all $EMU_START_MAX_RETRIES attempts failed"
-            failed=$((failed + 1))
-        fi
-    done
-
-    return $failed
-}
-
-wait_emulators() {
-    log "Waiting for emulators to start (${EMU_WAIT_TIME}s)..."
-    sleep "$EMU_WAIT_TIME"
-
-    ALIVE_WORKERS=0
-    [[ -f "$EMU_PID_FILE" ]] && while read -r pid; do
-        [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && ALIVE_WORKERS=$((ALIVE_WORKERS + 1))
-    done < "$EMU_PID_FILE"
-
-    log "Alive emulators: $ALIVE_WORKERS"
-    [[ $ALIVE_WORKERS -eq 0 ]] && { log "Error: All emulators stopped"; return 1; }
-
-    log "Checking ADB devices on each ADB server..."
-    local total_devices=0
-    for i in $(seq 0 $((NUM_WORKERS - 1))); do
-        local adb_server_port=$((ADB_SERVER_START_PORT + i))
-        local device_count
-        device_count=$(timeout 10 $ADB_PATH -P "$adb_server_port" devices 2>/dev/null | grep -c "emulator-" | tail -1) || device_count=0
-        [[ "$device_count" =~ ^[0-9]+$ ]] || device_count=0
-        log "  [ADB] Server port $adb_server_port: $device_count device(s)"
-        total_devices=$((total_devices + device_count))
-    done
-
-    if [[ $total_devices -eq 0 ]]; then
-        log "Waiting for ADB devices (30s)..."
-        sleep 30
-        total_devices=0
-        for i in $(seq 0 $((NUM_WORKERS - 1))); do
-            local adb_server_port=$((ADB_SERVER_START_PORT + i))
-            local device_count
-            device_count=$(timeout 10 $ADB_PATH -P "$adb_server_port" devices 2>/dev/null | grep -c "emulator-" | tail -1) || device_count=0
-            [[ "$device_count" =~ ^[0-9]+$ ]] || device_count=0
-            total_devices=$((total_devices + device_count))
-        done
-    fi
-
-    [[ $total_devices -eq 0 ]] && { log "Error: No ADB devices detected"; return 1; }
-    log "Total detected devices: $total_devices"
-    return 0
-}
-
-# ==================== Evaluation ====================
-
-run_eval() {
-    local workers=$1 repeat_id=$2 tasks_file=${3:-}
-    log "Starting evaluation (workers=$workers, repeat=$repeat_id)..."
-
-    local cmd=(
-        python test_android_world.py
-        --config "$CONFIG_FILE"
-        --num_workers "$workers"
-        --start_port "$START_PORT"
-        --adb_server_start_port "$ADB_SERVER_START_PORT"
-        --log_dir "$LOG_DIR"
-        --repeat_id "$repeat_id"
-    )
-    [[ -n "$tasks_file" ]] && cmd+=(--tasks_file "$tasks_file")
-    [[ -n "$TASK_RANDOM_SEED" ]] && cmd+=(--task_random_seed "$TASK_RANDOM_SEED")
-
-    "${cmd[@]}"
-
-    local ret=$?
-    log "Evaluation completed (exit code: $ret)"
-    return $ret
-}
 
 count_tasks_in_file() {
     local task_file=$1
@@ -500,18 +255,20 @@ pending_tasks = sorted(
     task for task, task_state in state['tasks'].items()
     if task_state.get('final_status') == 'pending'
 )
+successful_tasks = sorted(
+    task for task, task_state in state['tasks'].items()
+    if task_state.get('final_status') == 'success'
+)
+failed_tasks = sorted(
+    task for task, task_state in state['tasks'].items()
+    if task_state.get('final_status') == 'failed'
+)
 
 state['attempts_processed'] = sorted(set(state.get('attempts_processed', [])) | {repeat_id})
 state['last_processed_repeat_id'] = repeat_id
 state['pending_tasks'] = pending_tasks
-state['successful_tasks'] = sorted(
-    task for task, task_state in state['tasks'].items()
-    if task_state.get('final_status') == 'success'
-)
-state['failed_tasks'] = sorted(
-    task for task, task_state in state['tasks'].items()
-    if task_state.get('final_status') == 'failed'
-)
+state['successful_tasks'] = successful_tasks
+state['failed_tasks'] = failed_tasks
 
 next_task_file.parent.mkdir(parents=True, exist_ok=True)
 next_task_file.write_text(
@@ -521,6 +278,305 @@ next_task_file.write_text(
 state_file.write_text(json.dumps(state, indent=2), encoding='utf-8')
 print(len(pending_tasks))
 PY
+}
+
+is_vllm_ready() {
+    curl --silent --show-error --max-time 10 "$VLLM_MODELS_ENDPOINT" >/dev/null 2>&1
+}
+
+start_ssh_tunnel() {
+    log "vLLM is unreachable at $VLLM_MODELS_ENDPOINT, starting SSH tunnel via $SSH_TUNNEL_HOST..."
+    ssh -N \
+        -L "$SSH_TUNNEL_PORT_SPEC" \
+        -o ExitOnForwardFailure=yes \
+        -o ServerAliveInterval=60 \
+        -o ServerAliveCountMax=3 \
+        "$SSH_TUNNEL_HOST" >/dev/null 2>&1 &
+
+    local tunnel_pid=$!
+    echo "$tunnel_pid" > "$TUNNEL_PID_FILE"
+    sleep 3
+
+    if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+        rm -f "$TUNNEL_PID_FILE"
+        log "[FAIL] SSH tunnel process exited immediately"
+        return 1
+    fi
+
+    if ! is_vllm_ready; then
+        log "[FAIL] SSH tunnel started but $VLLM_MODELS_ENDPOINT is still unreachable"
+        kill "$tunnel_pid" 2>/dev/null || true
+        rm -f "$TUNNEL_PID_FILE"
+        return 1
+    fi
+
+    log "[OK] SSH tunnel ready: $SSH_TUNNEL_PORT_SPEC via $SSH_TUNNEL_HOST"
+}
+
+ensure_vllm_connection() {
+    log "Checking vLLM connectivity: $VLLM_MODELS_ENDPOINT"
+    if is_vllm_ready; then
+        log "[OK] vLLM is reachable"
+        return 0
+    fi
+
+    [[ -f "$TUNNEL_PID_FILE" ]] && rm -f "$TUNNEL_PID_FILE"
+    start_ssh_tunnel || return 1
+}
+
+reap_zombies() {
+    local zombie_count=$(ps aux | awk '{if ($8 ~ /Z/) print $2}' | wc -l)
+    if [[ $zombie_count -gt 100 ]]; then
+        log "[WARNING] Found $zombie_count zombie processes, attempting to reap..."
+        wait 2>/dev/null || true
+        for ppid in $(ps aux | awk '{if ($8 ~ /Z/) print $3}' | sort -u); do
+            [[ -n "$ppid" && "$ppid" != "1" ]] && kill -SIGCHLD "$ppid" 2>/dev/null || true
+        done
+        sleep 1
+        local new_count=$(ps aux | awk '{if ($8 ~ /Z/) print $2}' | wc -l)
+        log "[INFO] Zombie count: before=$zombie_count, after=$new_count"
+    fi
+}
+
+# ==================== AVD Management ====================
+
+create_avd_copy() {
+    local worker_id=$1
+    local target_avd="${AVD_NAME}_worker_${worker_id}"
+    local source_dir="$ANDROID_AVD_HOME/${AVD_NAME}.avd"
+    local target_dir="$ANDROID_AVD_HOME/${target_avd}.avd"
+    local source_ini="$ANDROID_AVD_HOME/${AVD_NAME}.ini"
+    local target_ini="$ANDROID_AVD_HOME/${target_avd}.ini"
+
+    if [[ -d "$target_dir" && -f "$target_ini" ]]; then
+        log "  [SKIP] AVD copy already exists: $target_avd"
+        echo "$target_avd" >> "$AVD_COPIES_FILE"
+        return 0
+    fi
+
+    rm -rf "$target_dir" "$target_ini"
+
+    log "  [CREATE] AVD copy: $target_avd"
+    cp -r "$source_dir" "$target_dir"
+    cp "$source_ini" "$target_ini"
+    sed -i "s|path=.*|path=${target_dir}|g" "$target_ini"
+    sed -i "s|path.rel=.*|path.rel=avd/${target_avd}.avd|g" "$target_ini"
+    [[ -f "$target_dir/hardware-qemu.ini" ]] && \
+        sed -i "s|${AVD_NAME}|${target_avd}|g" "$target_dir/hardware-qemu.ini"
+
+    echo "$target_avd" >> "$AVD_COPIES_FILE"
+}
+
+cleanup_avd_copies() {
+    [[ ! -f "$AVD_COPIES_FILE" ]] && return
+    log "Cleaning up AVD copies..."
+    while read -r avd_name; do
+        [[ "$avd_name" == *"_worker_"* ]] || continue
+        rm -rf "$ANDROID_AVD_HOME/${avd_name}.avd" "$ANDROID_AVD_HOME/${avd_name}.ini"
+        log "  [DELETE] $avd_name"
+    done < "$AVD_COPIES_FILE"
+    rm -f "$AVD_COPIES_FILE"
+}
+
+# ==================== Emulator Management ====================
+
+kill_pids() {
+    local pid_file=$1
+    [[ ! -f "$pid_file" ]] && return
+    while read -r pid; do
+        [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+    done < "$pid_file"
+    sleep 3
+    while read -r pid; do
+        [[ -n "$pid" ]] && kill -9 "$pid" 2>/dev/null || true
+    done < "$pid_file"
+}
+
+start_adb_server() {
+    local worker_id=$1
+    local adb_server_port=$((ADB_SERVER_START_PORT + worker_id))
+    timeout 10 "$ADB_PATH" -P "$adb_server_port" kill-server 2>/dev/null || true
+    sleep 1
+    timeout 15 "$ADB_PATH" -P "$adb_server_port" start-server 2>/dev/null || {
+        log "  [WARN] Worker $worker_id: ADB server start timed out on port $adb_server_port"
+        return 1
+    }
+    log "  [ADB] Worker $worker_id: ADB server started on port $adb_server_port"
+}
+
+stop_all_adb_servers() {
+    log "Stopping all ADB servers..."
+    for i in $(seq 0 $((NUM_WORKERS - 1))); do
+        local adb_server_port=$((ADB_SERVER_START_PORT + i))
+        timeout 10 "$ADB_PATH" -P "$adb_server_port" kill-server 2>/dev/null &
+    done
+    timeout 10 "$ADB_PATH" kill-server 2>/dev/null &
+    local wait_start=$SECONDS
+    while [[ $((SECONDS - wait_start)) -lt 30 ]] && jobs -r | grep -q .; do
+        sleep 1
+    done
+    pkill -9 -f "adb.*kill-server" 2>/dev/null || true
+    log "All ADB servers stopped"
+}
+
+cleanup() {
+    local preserve_tunnel=${1:-0}
+    log "Cleaning up resources..."
+    reap_zombies
+    kill_pids "$EMU_PID_FILE"
+    pkill -f "emulator.*${AVD_NAME}" 2>/dev/null || true
+    pkill -f "python.*test_android_world.py" 2>/dev/null || true
+    sleep 2
+    pkill -9 -f "python.*test_android_world.py" 2>/dev/null || true
+    pkill -f "qemu-system-x86" 2>/dev/null || true
+    sleep 1
+    pkill -9 -f "qemu-system-x86" 2>/dev/null || true
+    stop_all_adb_servers
+    cleanup_avd_copies
+    if [[ "$preserve_tunnel" != "1" ]]; then
+        kill_pids "$TUNNEL_PID_FILE"
+        rm -f "$TUNNEL_PID_FILE"
+    fi
+    rm -f "$EMU_PID_FILE"
+    wait 2>/dev/null || true
+    reap_zombies
+    log "Cleanup completed"
+}
+
+start_emulators() {
+    log "Starting $NUM_WORKERS emulators..."
+    local failed=0
+
+    log "Creating AVD copies..."
+    rm -f "$AVD_COPIES_FILE"
+    for i in $(seq 0 $((NUM_WORKERS - 1))); do
+        create_avd_copy "$i" || failed=$((failed + 1))
+    done
+    [[ $failed -gt 0 ]] && { log "Failed to create AVD copies: $failed"; return $failed; }
+
+    log "Starting independent ADB servers..."
+    for i in $(seq 0 $((NUM_WORKERS - 1))); do
+        start_adb_server "$i"
+    done
+    sleep 2
+
+    failed=0
+    for i in $(seq 0 $((NUM_WORKERS - 1))); do
+        local console_port=$((START_PORT + i * 2))
+        local adb_port=$((console_port + 1))
+        local grpc_port=$((8554 + i))
+        local adb_server_port=$((ADB_SERVER_START_PORT + i))
+        local worker_avd="${AVD_NAME}_worker_${i}"
+        local emu_log="${LOG_DIR}/emulators/emu_${i}_port_${console_port}.log"
+
+        local started=false
+        for attempt in $(seq 1 $EMU_START_MAX_RETRIES); do
+            ANDROID_ADB_SERVER_PORT="$adb_server_port" "$EMULATOR_PATH" \
+                -adb-path "$ADB_PATH" \
+                -gpu swiftshader_indirect \
+                -no-audio -no-skin -no-window \
+                -show-kernel -verbose \
+                -avd "$worker_avd" \
+                -memory $EMU_MEMORY \
+                -cores $EMU_CORES \
+                -grpc "$grpc_port" \
+                -ports "${console_port},${adb_port}" \
+                -snapshot default_boot \
+                -feature AllowSnapshotMigration,MigratableSnapshotSave \
+                > "$emu_log" 2>&1 &
+
+            local emu_pid=$!
+            echo "$emu_pid" >> "$EMU_PID_FILE"
+            sleep 5
+
+            if kill -0 "$emu_pid" 2>/dev/null; then
+                log "  [OK] Worker $i: avd=$worker_avd, ports=($console_port,$adb_port,$grpc_port), adb_server=$adb_server_port, pid=$emu_pid"
+                started=true
+                break
+            else
+                log "  [FAIL] Worker $i failed to start (attempt $attempt/$EMU_START_MAX_RETRIES)"
+                # [[ -f "$emu_log" ]] && tail -3 "$emu_log" | sed 's/^/    /'
+                [[ -f "$emu_log" ]] && { echo "---- emulator log ($emu_log) ----"; tail -50 "$emu_log"; echo "-------------------------------"; }
+                if [[ $attempt -lt $EMU_START_MAX_RETRIES ]]; then
+                    log "  [RETRY] Worker $i: retrying in 3s..."
+                    sleep 3
+                fi
+            fi
+        done
+
+        if [[ "$started" != "true" ]]; then
+            log "  [GIVE UP] Worker $i: all $EMU_START_MAX_RETRIES attempts failed"
+            failed=$((failed + 1))
+        fi
+    done
+
+    return $failed
+}
+
+wait_emulators() {
+    log "Waiting for emulators to start (${EMU_WAIT_TIME}s)..."
+    sleep "$EMU_WAIT_TIME"
+
+    ALIVE_WORKERS=0
+    [[ -f "$EMU_PID_FILE" ]] && while read -r pid; do
+        [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && ALIVE_WORKERS=$((ALIVE_WORKERS + 1))
+    done < "$EMU_PID_FILE"
+
+    log "Alive emulators: $ALIVE_WORKERS"
+    [[ $ALIVE_WORKERS -eq 0 ]] && { log "Error: All emulators stopped"; return 1; }
+
+    log "Checking ADB devices on each ADB server..."
+    local total_devices=0
+    for i in $(seq 0 $((NUM_WORKERS - 1))); do
+        local adb_server_port=$((ADB_SERVER_START_PORT + i))
+        local device_count
+        device_count=$(timeout 10 $ADB_PATH -P "$adb_server_port" devices 2>/dev/null | grep -c "emulator-" | tail -1) || device_count=0
+        [[ "$device_count" =~ ^[0-9]+$ ]] || device_count=0
+        log "  [ADB] Server port $adb_server_port: $device_count device(s)"
+        total_devices=$((total_devices + device_count))
+    done
+
+    if [[ $total_devices -eq 0 ]]; then
+        log "Waiting for ADB devices (30s)..."
+        sleep 30
+        total_devices=0
+        for i in $(seq 0 $((NUM_WORKERS - 1))); do
+            local adb_server_port=$((ADB_SERVER_START_PORT + i))
+            local device_count
+            device_count=$(timeout 10 $ADB_PATH -P "$adb_server_port" devices 2>/dev/null | grep -c "emulator-" | tail -1) || device_count=0
+            [[ "$device_count" =~ ^[0-9]+$ ]] || device_count=0
+            total_devices=$((total_devices + device_count))
+        done
+    fi
+
+    [[ $total_devices -eq 0 ]] && { log "Error: No ADB devices detected"; return 1; }
+    log "Total detected devices: $total_devices"
+    return 0
+}
+
+# ==================== Evaluation ====================
+
+run_eval() {
+    local workers=$1 repeat_id=$2 tasks_file=${3:-}
+    log "Starting evaluation (workers=$workers, repeat=$repeat_id)..."
+
+    local cmd=(
+        python test_android_world.py
+        --config "$CONFIG_FILE" \
+        --num_workers "$workers" \
+        --start_port "$START_PORT" \
+        --adb_server_start_port "$ADB_SERVER_START_PORT" \
+        --log_dir "$LOG_DIR" \
+        --repeat_id "$repeat_id"
+    )
+    [[ -n "$tasks_file" ]] && cmd+=(--tasks_file "$tasks_file")
+    [[ -n "$TASK_RANDOM_SEED" ]] && cmd+=(--task_random_seed "$TASK_RANDOM_SEED")
+
+    "${cmd[@]}"
+
+    local ret=$?
+    log "Evaluation completed (exit code: $ret)"
+    return $ret
 }
 
 run_round_attempt() {
@@ -539,7 +595,7 @@ run_round_attempt() {
     fi
 
     log "Cleaning up previous round..."
-    cleanup
+    cleanup 1
     rm -f "$EMU_PID_FILE"
     sleep 5
 
@@ -642,6 +698,8 @@ print_header
     exit 1
 }
 [[ ! -f "$EMULATOR_PATH" ]] && die "Emulator not found: $EMULATOR_PATH"
+command -v curl >/dev/null 2>&1 || die "curl not found"
+command -v ssh >/dev/null 2>&1 || die "ssh not found"
 
 echo "$ANDROID_AVD_HOME/$AVD_NAME.avd"
 [[ ! -d "$ANDROID_AVD_HOME/$AVD_NAME.avd" ]] && die "AVD not found: $AVD_NAME"
@@ -650,6 +708,7 @@ mkdir -p "$LOG_DIR/emulators"
 mkdir -p "$OUTPUT_PATH"
 mkdir -p "$RETRY_TASK_DIR"
 rm -f "$EMU_PID_FILE"
+rm -f "$TUNNEL_PID_FILE"
 rm -f "$RETRY_STATE_FILE"
 
 # Copy config to output dir as runtime config
@@ -668,6 +727,8 @@ CONFIG_FILE="$RUNTIME_CONFIG_FILE"
 
 (
     trap cleanup EXIT INT TERM
+
+    ensure_vllm_connection || die "Unable to reach vLLM at $VLLM_MODELS_ENDPOINT"
 
     if [[ "$RETRY_FAILED_TASKS" == "1" ]]; then
         run_retry_mode

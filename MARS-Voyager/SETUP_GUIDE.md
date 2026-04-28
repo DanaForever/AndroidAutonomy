@@ -55,6 +55,40 @@ CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
 
 Once started, the API server will be accessible at `http://<server-ip>:8000`
 
+### Optional: Access the API Server via SSH Tunnel
+
+If the server is not directly reachable from your local machine, create an SSH tunnel and send requests through `localhost` instead of the server's public IP.
+
+Run this command on your local machine and keep it open while evaluating:
+
+```bash
+ssh -N -L 8000:127.0.0.1:8000 <username>@<server-ip>
+```
+
+This forwards your local port `8000` to port `8000` on the remote server.
+
+If you are serving vLLM on SuperPod, tunnel through the `superpod` login host to the compute node that is running vLLM. For example, if the model server is running on compute node `sdc2-hpc-dgx-a100-001`, use:
+
+```bash
+ssh -N -L 8000:sdc2-hpc-dgx-a100-001:8000 superpod
+```
+
+Here, `sdc2-hpc-dgx-a100-001` is the compute node hostname, and `superpod` is the SSH host defined in your local SSH config.
+
+After the tunnel is established:
+
+- Use `http://127.0.0.1:8000/v1` as `llm.base_url` in `androidworld/eval/configs/UI-Voyager.yaml`
+- Keep the vLLM server running on the remote machine
+- Keep the SSH session open for the entire evaluation run
+
+If local port `8000` is already in use, choose a different local port:
+
+```bash
+ssh -N -L 8001:127.0.0.1:8000 <username>@<server-ip>
+```
+
+Then set `llm.base_url` to `http://127.0.0.1:8001/v1`.
+
 ---
 
 ## Part 2: Local Machine Setup
@@ -82,7 +116,7 @@ If your setup differs, override these variables when running the evaluation scri
 Create a new conda environment for the evaluation:
 
 ```bash
-conda create -n uivoyager python=3.10
+conda create -n uivoyager python=3.11
 conda activate uivoyager
 ```
 

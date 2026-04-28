@@ -94,11 +94,13 @@ create_avd_copy() {
     local source_ini="$ANDROID_AVD_HOME/${AVD_NAME}.ini"
     local target_ini="$ANDROID_AVD_HOME/${target_avd}.ini"
 
-    if [[ -d "$target_dir" ]]; then
+    if [[ -d "$target_dir" && -f "$target_ini" ]]; then
         log "  [SKIP] AVD copy already exists: $target_avd"
         echo "$target_avd" >> "$AVD_COPIES_FILE"
         return 0
     fi
+
+    rm -rf "$target_dir" "$target_ini"
 
     log "  [CREATE] AVD copy: $target_avd"
     cp -r "$source_dir" "$target_dir"

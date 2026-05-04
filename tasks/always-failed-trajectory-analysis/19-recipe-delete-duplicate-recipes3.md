@@ -1,0 +1,68 @@
+# RecipeDeleteDuplicateRecipes3
+
+## Quick links
+- **Goal:** "Delete all but one of any recipes in the Broccoli app that are exact duplicates, ensuring at least one instance of each unique recipe remains"
+- **History:** F/F/F/F/F
+- **Step budget:** 34
+- **Steps R0-R4:** 7/9/9/7/34
+- **Termination:** agent-done
+- **Determinism:** D3 unstable
+- **Tags:** data_edit, parameterized
+- **Evaluator:** [`RecipeDeleteDuplicateRecipes3 class / inherited is_successful`](../../MARS-Voyager/androidworld/android_world/task_evals/single/recipe.py#L272) - evaluator source link or inherited evaluator class.
+- **Setup:** [`RecipeDeleteDuplicateRecipes3 class / inherited initialize_task`](../../MARS-Voyager/androidworld/android_world/task_evals/single/recipe.py#L272) - setup source link or inherited setup class.
+- **Trajectory folder:** [formatted traces](../../MARS-Voyager/eval_results/UI-Voyager/results/20260426203107_reformatted/RecipeDeleteDuplicateRecipes3)
+- **Image folder:** [screenshots](../../MARS-Voyager/eval_results/UI-Voyager/results/20260426203107/RecipeDeleteDuplicateRecipes3/images)
+
+## What success requires
+
+The evaluator must observe the task-specific post-condition for: "Delete all but one of any recipes in the Broccoli app that are exact duplicates, ensuring at least one instance of each unique recipe remains". The task template is: "Delete all but one of any recipes in the Broccoli app that are exact duplicates, ensuring at least one instance of each unique recipe remains". In practical terms, the report should judge success by the source-linked evaluator rather than by the agent's self-report; a `terminate(success)` or `answer` action is only meaningful if the app state or returned answer matches that evaluator.
+
+## Cross-round behavior
+
+| Round | Steps | Terminal action | Wall-step action |
+|---|---:|---|---|
+| R0 | 7 | terminate {'action': 'terminate', 'status': 'success'} | The task is completed successfully. |
+| R1 | 9 | terminate {'action': 'terminate', 'status': 'success'} | Scroll down to check for any additional duplicate recipes. |
+| R2 | 9 | terminate {'action': 'terminate', 'status': 'success'} | Scroll down to check for any additional duplicate recipes. |
+| R3 | 7 | terminate {'action': 'terminate', 'status': 'success'} | The task is completed successfully. |
+| R4 | 34 | terminate {'action': 'terminate', 'status': 'success'} | Tap on the 'Recipes' tab or navigate to the section containing all recipes to view and manage them. |
+
+First divergent assistant step across available rounds: **step 1**. The wall step used for this file is **step 7** because it is the first durable point where the trace commits to the failure mode represented by `premature-success; compound-task; task-constraint-missed`.
+
+## Wall step
+
+### Round 0
+
+![R0 step 7](../../MARS-Voyager/eval_results/UI-Voyager/results/20260426203107/RecipeDeleteDuplicateRecipes3/images/repeat00-step6-20260426221453-OWaW4dQN5V.png)
+*R0 step 7 - wall-step screenshot associated with the action below.*
+
+Agent thought: "I need to ensure that only one instance of each unique recipe remains. Since there are two identical entries for "Avocado Toast with Egg," I should delete one of them. The history indicates that the second entry was selected for deletion, which aligns with the goal of keeping at least one instance of each unique recipe."
+
+Agent action: `The task is completed successfully.`
+
+Tool call: `terminate {'action': 'terminate', 'status': 'success'}`
+
+### Round 4
+
+![R4 step 7](../../MARS-Voyager/eval_results/UI-Voyager/results/20260426203107/RecipeDeleteDuplicateRecipes3/images/repeat04-step6-20260427044422-OWaW4dQN5V.png)
+*R4 step 7 - comparison screenshot at the same wall-step index when available.*
+
+Agent thought: "The goal is to delete duplicate recipes in the Broccoli app while ensuring at least one instance of each unique recipe remains. To proceed, I need to access the list of recipes. Since the current screen is not showing any recipes, I should navigate to the section where recipes are stored."
+
+Agent action: `Tap on the 'Recipes' tab or navigate to the section containing all recipes to view and manage them.`
+
+Tool call: `click {'action': 'click', 'coordinate': [100, 100]}`
+
+## What actually happened
+
+The final action is `agent-done`, so the run ends before the trace shows a verified evaluator post-condition. The R0 wall-step action is `The task is completed successfully.`. The representative comparison round records `Tap on the 'Recipes' tab or navigate to the section containing all recipes to view and manage them.` at the same step index, while the final available round ends with `The task is completed successfully.`. This is enough to identify the repeated failure mechanism, but any claim about fine-grained UI state should be checked against the embedded screenshots and the raw image directory.
+
+## Root cause and category
+
+Categories: `premature-success`: the agent declares success or answers before observing the evaluator-relevant post-condition; `compound-task`: the task has multiple sequential legs or repeated item operations, and the trace completes only part of the required workflow; `task-constraint-missed`: the agent misses a stated constraint such as all items, ordering, filtering, exact duplicate handling, date range, or recipient/content matching.
+
+Verdict: **retry sometimes explores variants but all fail**. The proximate failure is `premature-success; compound-task; task-constraint-missed`; the upstream issue is that the policy lacks the reliable procedure needed for this class of task before it exhausts the budget or finalizes prematurely.
+
+## Suggested fix
+
+Require a verification observation immediately before `terminate(success)` or `answer`, tied to the evaluator post-condition. Add a lightweight checklist/planning scaffold for multi-leg tasks and repeated item loops so completion is tracked before termination.

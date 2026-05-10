@@ -111,7 +111,51 @@ You must have an Android Virtual Device (AVD) available. Follow the [AndroidWorl
 
 If your setup differs, override these variables when running the evaluation script.
 
-### Step 2: Create UI-Voyager Environment
+### Step 2: Bootstrap AndroidWorld Apps and Snapshots
+
+Before running evaluation on a new local environment or freshly-created AVD, run the AndroidWorld app setup pass on the base `AndroidWorldAvd`. This installs/configures the apps used by the task suite and creates app data snapshots that worker AVD copies restore during evaluation.
+
+Use the detailed procedure in [`../tasks/snapshot-universal-fix/setup_apps/instructions.md`](../tasks/snapshot-universal-fix/setup_apps/instructions.md). At minimum, the flow is:
+
+1. Boot the base `AndroidWorldAvd` on ports `5554,5555` with gRPC port `8554`.
+2. Run `androidworld/minimal_task_runner.py` with `--perform_emulator_setup=True`.
+3. Recover snapshots into `/data/local/tmp/android_world/snapshots`:
+
+```bash
+cd /home/thivux/code/vinai/GUI_agent/AndroidAutonomy
+tasks/snapshot-universal-fix/setup_apps/recover_snapshots.sh
+```
+
+4. Reboot-test the base AVD and confirm snapshots still exist:
+
+```bash
+adb -s emulator-5554 shell ls /data/local/tmp/android_world/snapshots/
+```
+
+Expected snapshot directories include:
+
+```text
+com.simplemobiletools.smsmessenger
+com.simplemobiletools.gallery.pro
+org.videolan.vlc
+net.gsantner.markor
+```
+
+If setup does not install Simple SMS Messenger automatically, install it manually before recovering snapshots:
+
+```bash
+mkdir -p /tmp/android_world/app_data
+curl -L \
+  -o /tmp/android_world/app_data/com.simplemobiletools.smsmessenger_85.apk \
+  https://storage.googleapis.com/gresearch/android_world/com.simplemobiletools.smsmessenger_85.apk
+
+adb -s emulator-5554 install -r \
+  /tmp/android_world/app_data/com.simplemobiletools.smsmessenger_85.apk
+```
+
+Then rerun the setup pass or manually open Simple SMS Messenger once, grant/deny any first-run prompts, and continue with `recover_snapshots.sh`.
+
+### Step 3: Create UI-Voyager Environment
 
 Create a new conda environment for the evaluation:
 
@@ -120,14 +164,14 @@ conda create -n uivoyager python=3.11
 conda activate uivoyager
 ```
 
-### Step 3: Install Dependencies
+### Step 4: Install Dependencies
 
 ```bash
 pip install -r androidworld/requirements.txt
 python3 android_env/setup.py install
 ```
 
-### Step 4: Configure the Evaluation
+### Step 5: Configure the Evaluation
 
 Edit the config file: `androidworld/eval/configs/UI-Voyager.yaml`
 
@@ -153,7 +197,7 @@ Key sections to verify/update:
   - `task_suite`: Which AndroidWorld tasks to run
   - `output_path`: Where to save results
 
-### Step 5: Run Evaluation
+### Step 6: Run Evaluation
 
 #### Single Worker (for testing):
 
@@ -180,7 +224,7 @@ NUM_WORKERS=4 CONFIG_NAME=UI-Voyager MODEL_NAME=UI-Voyager \
 - `CONFIG_NAME`: Configuration file name (without `.yaml`)
 - `MODEL_NAME`: Model identifier for results organization
 
-### Step 6: Monitor and Stop Evaluation
+### Step 7: Monitor and Stop Evaluation
 
 After launching, the script will output:
 - Main process ID
@@ -245,6 +289,8 @@ eval_results/
 - Ensure AVD is created: `emulator -list-avds`
 - Check emulator path is correct
 - Verify `$ANDROID_AVD_HOME` directory exists
+- If evaluation logs show `Skipping app snapshot loading`, rerun the app/snapshot bootstrap in [`../tasks/snapshot-universal-fix/setup_apps/instructions.md`](../tasks/snapshot-universal-fix/setup_apps/instructions.md).
+- If SMS tasks fail because Simple SMS Messenger is missing, manually install `com.simplemobiletools.smsmessenger_85.apk` using the command in Step 2, then rerun snapshot recovery.
 
 ### Python Dependencies
 - Install missing packages: `pip install -r androidworld/requirements.txt`
@@ -257,6 +303,7 @@ eval_results/
 | Task | Command |
 |------|---------|
 | Start server | `CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server --model MarsXL/UI-Voyager --served-model-name UI-Voyager --host 0.0.0.0 --port 8000 --tensor-parallel-size 1 --max-model-len 200000 --gpu-memory-utilization 0.95` |
+| Recover app snapshots | `tasks/snapshot-universal-fix/setup_apps/recover_snapshots.sh` |
 | Run evaluation (1 worker) | `EMULATOR_PATH="$HOME/Android/Sdk/emulator/emulator" ANDROID_AVD_HOME="$HOME/.android/avd" NUM_WORKERS=1 CONFIG_NAME=UI-Voyager MODEL_NAME=UI-Voyager ./run_android_world.sh` |
 | Run evaluation (4 workers) | `EMULATOR_PATH="$HOME/Android/Sdk/emulator/emulator" ANDROID_AVD_HOME="$HOME/.android/avd" NUM_WORKERS=4 CONFIG_NAME=UI-Voyager MODEL_NAME=UI-Voyager ./run_android_world.sh` |
 | Stop evaluation | `./stop_android_world.sh /path/to/eval_results/<MODEL_NAME>/logs/<TIMESTAMP>` |

@@ -28,3 +28,7 @@ test_port.py
 
 # Android
 *.apk
+
+# External training framework clone
+training/verl
+training/data/sft_v0

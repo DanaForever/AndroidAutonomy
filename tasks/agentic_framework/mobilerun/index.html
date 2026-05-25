@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MobileRun — Agentic Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Newsreader:opsz,wght@6..72,400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0b0f10;--ink2:#10171a;--panel:#121b1f;--panel2:#16232a;--line:#1f3239;
+  --fog:#7f9aa3;--paper:#e7efe9;--lime:#b8ff4a;--amber:#ffb454;--cyan:#5fe3d0;--rose:#ff7a8a;
+  --grid:rgba(120,180,180,.05);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ink);color:var(--paper);font-family:"Newsreader",serif;font-size:18px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:42px 42px;overflow:hidden}
+::selection{background:var(--lime);color:var(--ink)}
+.mono{font-family:"JetBrains Mono",monospace}
+
+/* slide system */
+.deck{height:100vh;width:100vw;position:relative}
+.slide{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .5s ease;overflow-y:auto;padding:54px clamp(24px,5vw,80px) 96px}
+.slide.active{opacity:1;visibility:visible}
+.inner{max-width:1080px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;justify-content:center}
+.snum{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--lime);letter-spacing:.24em;text-transform:uppercase}
+h2{font-family:"Syne",sans-serif;font-weight:800;font-size:clamp(30px,4.6vw,54px);line-height:1.02;letter-spacing:-.02em;margin:10px 0 14px}
+h2 .gl{color:var(--lime)}
+.sub{color:var(--fog);font-size:19px;max-width:760px;margin-bottom:30px}
+.sub b{color:var(--paper);font-weight:500}
+
+/* nav */
+.nav{position:fixed;bottom:24px;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:18px;z-index:50}
+.dots{display:flex;gap:9px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line);border:none;cursor:pointer;transition:.2s}
+.dot.on{background:var(--lime);box-shadow:0 0 12px var(--lime);transform:scale(1.15)}
+.arrow{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--fog);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 13px;cursor:pointer;transition:.2s}
+.arrow:hover{color:var(--lime);border-color:var(--lime)}
+.pglabel{position:fixed;top:22px;right:28px;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--fog);z-index:50}
+.badge{position:fixed;top:20px;left:28px;z-index:50;font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink);background:var(--lime);padding:7px 12px;border-radius:30px;font-weight:700}
+
+/* generic blocks */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.card{background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line);border-radius:16px;padding:24px}
+.card .ic{font-size:12px;font-family:"JetBrains Mono",monospace;letter-spacing:.16em;text-transform:uppercase;margin-bottom:10px}
+.card h3{font-family:"Syne",sans-serif;font-weight:700;font-size:22px;margin-bottom:8px}
+.card p{color:#c4d2cc;font-size:16px}
+.card.cyan{border-color:rgba(95,227,208,.4)} .card.cyan .ic{color:var(--cyan)}
+.card.lime{border-color:rgba(184,255,74,.4)} .card.lime .ic{color:var(--lime)}
+.flowline{font-family:"JetBrains Mono",monospace;font-size:13.5px;color:var(--fog);margin:10px 0 4px}
+
+.loopwrap{display:flex;justify-content:center;margin:4px 0}
+svg{max-width:100%;height:auto}
+.steps-simple{list-style:none;counter-reset:s;margin-top:6px}
+.steps-simple li{counter-increment:s;position:relative;padding:8px 0 8px 40px;color:#d3e0d8;font-size:16.5px;border-bottom:1px dashed rgba(120,180,180,.12)}
+.steps-simple li::before{content:counter(s);position:absolute;left:0;top:8px;width:24px;height:24px;border-radius:50%;background:var(--ink2);border:1px solid var(--cyan);color:var(--cyan);font-family:"JetBrains Mono",monospace;font-size:12px;display:flex;align-items:center;justify-content:center}
+.steps-simple b.who{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.06em}
+.who.pl{color:var(--cyan)} .who.ex{color:var(--amber)} .who.sys{color:var(--lime)}
+
+/* perception slide */
+.persplit{display:grid;grid-template-columns:250px 1fr;gap:34px;align-items:center}
+.persplit img{width:100%;border-radius:12px;border:1px solid var(--line);display:block;box-shadow:0 12px 34px rgba(0,0,0,.55)}
+.persplit figcaption{text-align:center;color:var(--fog);font-family:"JetBrains Mono",monospace;font-size:11px;margin-top:8px}
+.switch{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
+.branch{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px}
+.branch.a{border-color:rgba(184,255,74,.4)} .branch.b{border-color:rgba(255,122,138,.35)}
+.branch .h{font-family:"Syne",sans-serif;font-weight:700;font-size:18px;margin-bottom:5px}
+.branch.a .h{color:var(--lime)} .branch.b .h{color:var(--rose)}
+.branch p{font-size:14.5px;color:#c2d0c9;margin-bottom:10px}
+.codepill{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--paper);background:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 10px;display:inline-block}
+.note{border-left:3px solid var(--lime);background:rgba(184,255,74,.05);padding:14px 18px;border-radius:0 12px 12px 0;margin-top:18px;font-size:15.5px;color:#dbe6df}
+.hood{margin-top:22px;border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--panel)}
+.hood .ht{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--lime);margin-bottom:14px}
+.hood .facts{display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:14.5px;color:#cdd9d2;line-height:1.5}
+.hood .facts q::before,.hood .facts q::after{content:""}
+.hood .facts .q{color:var(--cyan);font-weight:600;display:block;margin-bottom:3px}
+.hood code{font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--amber)}
+
+/* example walkthrough */
+.steps{position:relative;margin-top:6px;padding-left:34px}
+.steps::before{content:"";position:absolute;left:9px;top:8px;bottom:8px;width:2px;background:linear-gradient(var(--cyan),var(--amber))}
+.step{position:relative;margin-bottom:16px}
+.step .n{position:absolute;left:-34px;top:0;width:20px;height:20px;border-radius:50%;background:var(--ink);border:2px solid var(--lime);color:var(--lime);font-family:"JetBrains Mono",monospace;font-size:11px;display:flex;align-items:center;justify-content:center}
+.step .who{font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase}
+.step .who.pl{color:var(--cyan)} .step .who.ex{color:var(--amber)} .step .who.sys{color:var(--lime)}
+.step .body{font-size:16.5px;color:#d3e0d8;margin-top:2px}
+.step code{font-family:"JetBrains Mono",monospace;font-size:13.5px;background:var(--ink2);border:1px solid var(--line);padding:2px 7px;border-radius:6px;color:var(--lime)}
+.promptlink{margin-top:6px;font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--cyan);text-decoration:none;border:1px solid var(--line);padding:8px 14px;border-radius:9px;display:inline-block}
+.promptlink:hover{border-color:var(--cyan)}
+
+@media(max-width:820px){
+  .grid2,.switch,.hood .facts{grid-template-columns:1fr}
+  .persplit{grid-template-columns:1fr}
+  .persplit figure{max-width:240px;margin:0 auto}
+  body{font-size:16px}
+  .slide{padding:64px 20px 96px}
+}
+</style>
+</head>
+<body>
+
+<div class="badge">91.4% on AndroidWorld</div>
+<div class="pglabel"><span id="cur">1</span> / 4</div>
+
+<div class="deck">
+
+  <!-- SLIDE 1 : OVERALL FLOW -->
+  <section class="slide active">
+    <div class="inner">
+      <span class="snum">01 · How it works</span>
+      <h2>Mobile<span class="gl">Run</span> at a glance</h2>
+      <p class="sub">MobileRun lets a language model control a real Android or iOS phone from a plain text goal. It runs in one of two modes, depending on how hard the task is.</p>
+
+      <div class="grid2">
+        <div class="card lime">
+          <div class="ic">◆ Direct mode (FastAgent)</div>
+          <h3>One agent</h3>
+          <p>It reads the goal and acts right away. No planning. Best for simple one-step tasks.</p>
+          <p class="flowline">goal → action → done</p>
+        </div>
+        <div class="card cyan">
+          <div class="ic">◇ Reasoning mode</div>
+          <h3>Two agents</h3>
+          <p>A Planner and an Executor work in a loop. Best for multi-step tasks that may need correction.</p>
+          <p class="flowline">goal → plan → act → check → repeat</p>
+        </div>
+      </div>
+
+      <p class="sub" style="margin:26px 0 14px">In reasoning mode there are 2 agents: a <b>Planner</b> and an <b>Executor</b>. Each has a different role, reinforced by its prompt.</p>
+
+      <div class="loopwrap">
+        <svg viewBox="0 0 760 300" role="img" aria-label="Reasoning loop">
+          <defs>
+            <marker id="c" markerWidth="11" markerHeight="11" refX="7" refY="3.2" orient="auto"><path d="M0,0 L7.5,3.2 L0,6.4 Z" fill="#5fe3d0"/></marker>
+            <marker id="a" markerWidth="11" markerHeight="11" refX="7" refY="3.2" orient="auto"><path d="M0,0 L7.5,3.2 L0,6.4 Z" fill="#ffb454"/></marker>
+          </defs>
+          <rect x="305" y="8" width="150" height="42" rx="10" fill="#16232a" stroke="#1f3239"/>
+          <text x="380" y="34" font-family="JetBrains Mono" font-size="13" fill="#b8ff4a" text-anchor="middle">GOAL</text>
+
+          <circle cx="180" cy="180" r="86" fill="#101b1f" stroke="#5fe3d0" stroke-width="1.6"/>
+          <text x="180" y="170" font-family="Syne" font-weight="700" font-size="19" fill="#5fe3d0" text-anchor="middle">Planner</text>
+          <text x="180" y="192" font-family="JetBrains Mono" font-size="10.5" fill="#7f9aa3" text-anchor="middle">plans + checks</text>
+          <text x="180" y="208" font-family="JetBrains Mono" font-size="10.5" fill="#7f9aa3" text-anchor="middle">no device touch</text>
+
+          <circle cx="580" cy="180" r="86" fill="#1c1710" stroke="#ffb454" stroke-width="1.6"/>
+          <text x="580" y="170" font-family="Syne" font-weight="700" font-size="19" fill="#ffb454" text-anchor="middle">Executor</text>
+          <text x="580" y="192" font-family="JetBrains Mono" font-size="10.5" fill="#7f9aa3" text-anchor="middle">one action</text>
+          <text x="580" y="208" font-family="JetBrains Mono" font-size="10.5" fill="#7f9aa3" text-anchor="middle">no planning</text>
+
+          <path d="M305,40 C230,60 205,82 184,98" stroke="#b8ff4a" stroke-width="1.4" fill="none" marker-end="url(#c)"/>
+          <path d="M268,150 C355,124 405,124 492,150" stroke="#5fe3d0" stroke-width="1.8" fill="none" marker-end="url(#c)"/>
+          <text x="380" y="120" font-family="JetBrains Mono" font-size="12" fill="#5fe3d0" text-anchor="middle">next step</text>
+          <path d="M492,212 C405,240 355,240 270,214" stroke="#ffb454" stroke-width="1.8" fill="none" marker-end="url(#a)"/>
+          <text x="380" y="262" font-family="JetBrains Mono" font-size="12" fill="#ffb454" text-anchor="middle">result</text>
+
+          <rect x="318" y="158" width="124" height="44" rx="9" fill="#0b0f10" stroke="#1f3239" stroke-dasharray="4 4"/>
+          <text x="380" y="178" font-family="JetBrains Mono" font-size="10.5" fill="#b8ff4a" text-anchor="middle">SHARED</text>
+          <text x="380" y="194" font-family="JetBrains Mono" font-size="10.5" fill="#b8ff4a" text-anchor="middle">STATE</text>
+
+          <text x="380" y="294" font-family="JetBrains Mono" font-size="11.5" fill="#7f9aa3" text-anchor="middle">the two agents share one state object. the loop repeats until the Planner marks the task done.</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 2 : ROLES -->
+  <section class="slide">
+    <div class="inner">
+      <span class="snum">02 · The two agents</span>
+      <h2>Planner and <span class="gl">Executor</span></h2>
+      <p class="sub">The split keeps the smart planning in one place. The Executor just acts, so it cannot drift off the plan.</p>
+
+      <div class="grid2">
+        <div class="card cyan">
+          <div class="ic">◇ Planner</div>
+          <h3>Makes the plan</h3>
+          <p style="font-style:italic;color:#cfe0d8;margin-bottom:12px">Its prompt: "track progress and devise high-level plans."</p>
+          <ul style="list-style:none">
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--lime)">▸</span> breaks the goal into small steps</li>
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--lime)">▸</span> checks the screen after each step</li>
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--lime)">▸</span> keeps a running memory</li>
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--lime)">▸</span> decides when the task is done</li>
+          </ul>
+        </div>
+        <div class="card" style="border-color:rgba(255,180,84,.4)">
+          <div class="ic" style="color:var(--amber)">◆ Executor</div>
+          <h3>Does one step</h3>
+          <p style="font-style:italic;color:#cfe0d8;margin-bottom:12px">Its prompt: "you are a low-level action executor."</p>
+          <ul style="list-style:none">
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--amber)">▸</span> takes one subgoal at a time</li>
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--amber)">▸</span> finds the target on screen</li>
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--amber)">▸</span> performs one action as JSON</li>
+            <li style="padding:5px 0 5px 20px;position:relative;color:#bccabf"><span style="position:absolute;left:0;color:var(--amber)">▸</span> does not decide what comes next</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note">
+        The Executor still reads the screen to locate the target. What it must not do is judge the plan or pick the next goal. That job stays with the Planner. This keeps the two roles from blurring.
+      </div>
+      <a class="promptlink" href="prompts.html" style="margin-top:18px">↳ see the real prompts</a>
+    </div>
+  </section>
+
+  <!-- SLIDE 3 : PERCEPTION -->
+  <section class="slide">
+    <div class="inner">
+      <span class="snum">03 · How it sees the screen</span>
+      <h2>Turning pixels into <span class="gl">choices</span></h2>
+      <p class="sub">To act, the agent must know what is on screen and where to tap. MobileRun labels the screen so the model can pick an element instead of guessing coordinates.</p>
+
+      <div class="persplit">
+        <figure style="margin:0">
+          <img src="set-of-marks.png" alt="Android home screen with numbered colored boxes around each app icon">
+          <figcaption>each element gets a numbered box</figcaption>
+        </figure>
+        <div>
+          <p style="font-size:17px;color:#d3e0d8">MobileRun reads the accessibility tree (the list of UI elements the OS exposes) plus a screenshot. Every element gets a number, drawn as a colored box on the screen. The model then says <span class="codepill" style="color:var(--lime)">click(34)</span> and the framework maps that number back to a real tap point.</p>
+          <div class="switch">
+            <div class="branch a">
+              <div class="h">Tree available</div>
+              <p>Elements have numbers. The agent taps by index.</p>
+              <span class="codepill">{ "action":"click", "index":34 }</span>
+            </div>
+            <div class="branch b">
+              <div class="h">Tree blocked</div>
+              <p>Some apps hide it (Messenger, banking, games). A grid is drawn instead and the agent taps by pixel.</p>
+              <span class="codepill">{ "action":"tap", "x":540, "y":1180 }</span>
+            </div>
+          </div>
+          <div class="note">One flag, <span class="mono" style="color:var(--amber)">requires_coordinate_tools</span>, decides which path is used. The same Executor handles both.</div>
+        </div>
+      </div>
+
+      <div class="hood">
+        <div class="ht">Under the hood</div>
+        <div class="facts">
+          <div>
+            <span class="q">Who makes the boxes? A script, not a model.</span>
+            A script parses the accessibility XML tree and gives each element an index. On the phone, the Portal app draws the boxes as a visual aid. Screenshots can hide them. The model just receives the indexed list plus a screenshot.
+          </div>
+          <div>
+            <span class="q">How fine is the grid?</span>
+            10 by 10. Lines are drawn every 1/10 of the width and height, and each line is labeled with its <code>x=</code> and <code>y=</code> pixel value.
+          </div>
+          <div>
+            <span class="q">Does the Executor get the gridded image?</span>
+            Yes. In coordinate mode the screenshot it receives has the grid drawn on it. The grid is added for the model only.
+          </div>
+          <div>
+            <span class="q">The flag and the tools</span>
+            <code>requires_coordinate_tools</code> is True only when the tree is blocked (the screenshot-only provider), else False. Coordinate tools tap by pixel: <code>click_at(x,y)</code>, <code>long_press</code>, <code>swipe(from,to)</code>. Index tools use <code>click(index)</code> and <code>type(text,index)</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 4 : EXAMPLE -->
+  <section class="slide">
+    <div class="inner">
+      <span class="snum">04 · A worked example</span>
+      <h2>Task: "turn on <span class="gl">dark mode</span>"</h2>
+      <p class="sub">One run through reasoning mode. Watch control pass between the Planner and the Executor.</p>
+
+      <div class="steps">
+        <div class="step"><div class="n">0</div><div class="who sys">See the screen</div><div class="body">The framework reads the tree, draws the numbered boxes, and saves the screen state.</div></div>
+        <div class="step"><div class="n">1</div><div class="who pl">Planner</div><div class="body">Makes a plan: open Settings, then tap Display, then toggle Dark theme. Picks the first step.</div></div>
+        <div class="step"><div class="n">2</div><div class="who ex">Executor</div><div class="body">Runs the first step: <code>{"action":"open_app","text":"Settings"}</code>. The result is saved.</div></div>
+        <div class="step"><div class="n">3</div><div class="who pl">Planner</div><div class="body">Reads the new screen, sees Settings is open, and picks the next step: tap Display.</div></div>
+        <div class="step"><div class="n">4</div><div class="who ex">Executor</div><div class="body">Finds element <code>[12] "Display"</code> in the tree and taps it: <code>{"action":"click","index":12}</code>.</div></div>
+        <div class="step"><div class="n">5</div><div class="who pl">Planner</div><div class="body">Toggles Dark theme, confirms it is on, and marks the task done.</div></div>
+      </div>
+
+      <div class="note">If this were an app with no tree (like Messenger), steps 2 to 5 would use a gridded screenshot and the Executor would tap by pixel position instead. The loop stays the same.</div>
+    </div>
+  </section>
+
+</div>
+
+<div class="nav">
+  <button class="arrow" id="prev">← prev</button>
+  <div class="dots" id="dots"></div>
+  <button class="arrow" id="next">next →</button>
+</div>
+
+<script>
+const slides=[...document.querySelectorAll('.slide')];
+const dotsBox=document.getElementById('dots');
+let i=0;
+slides.forEach((_,n)=>{const b=document.createElement('button');b.className='dot'+(n===0?' on':'');b.onclick=()=>go(n);dotsBox.appendChild(b)});
+const dots=[...document.querySelectorAll('.dot')];
+function go(n){i=Math.max(0,Math.min(slides.length-1,n));
+  slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+  dots.forEach((d,k)=>d.classList.toggle('on',k===i));
+  document.getElementById('cur').textContent=i+1;
+}
+document.getElementById('next').onclick=()=>go(i+1);
+document.getElementById('prev').onclick=()=>go(i-1);
+addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='PageDown')go(i+1);if(e.key==='ArrowLeft'||e.key==='PageUp')go(i-1)});
+</script>
+</body>
+</html>

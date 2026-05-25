@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoDevice — Agentic Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0a0f;--ink2:#11111a;--panel:#15131f;--panel2:#1b1730;--line:#2a2740;
+  --fog:#9a93b5;--paper:#f0ecf7;
+  --vio:#b794ff;--coral:#ff7849;--gold:#ffd166;--mint:#6ee7c7;--rose:#ff6b81;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ink);color:var(--paper);font-family:"Fraunces",serif;font-size:18px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(680px 460px at 84% 12%,rgba(183,148,255,.10),transparent 60%),radial-gradient(620px 420px at 8% 92%,rgba(110,231,199,.07),transparent 60%);overflow:hidden}
+::selection{background:var(--vio);color:var(--ink)}
+.mono{font-family:"IBM Plex Mono",monospace}
+
+.deck{height:100vh;width:100vw;position:relative}
+.slide{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity .5s ease;overflow-y:auto;padding:54px clamp(24px,5vw,80px) 96px}
+.slide.active{opacity:1;visibility:visible}
+.inner{max-width:1080px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;justify-content:center}
+.snum{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--vio);letter-spacing:.24em;text-transform:uppercase}
+h2{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:clamp(30px,4.6vw,54px);line-height:1.02;letter-spacing:-.02em;margin:10px 0 14px}
+h2 .gl{color:var(--vio)}
+.sub{color:var(--fog);font-size:19px;max-width:760px;margin-bottom:30px}
+.sub b{color:var(--paper);font-weight:500}
+
+.nav{position:fixed;bottom:24px;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:18px;z-index:50}
+.dots{display:flex;gap:9px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line);border:none;cursor:pointer;transition:.2s}
+.dot.on{background:var(--vio);box-shadow:0 0 12px var(--vio);transform:scale(1.15)}
+.arrow{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--fog);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 13px;cursor:pointer;transition:.2s}
+.arrow:hover{color:var(--vio);border-color:var(--vio)}
+.pglabel{position:fixed;top:22px;right:28px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--fog);z-index:50}
+.badge{position:fixed;top:20px;left:28px;z-index:50;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink);background:var(--vio);padding:7px 12px;border-radius:30px;font-weight:600}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.card{background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line);border-radius:16px;padding:24px}
+.card .ic{font-size:12px;font-family:"IBM Plex Mono",monospace;letter-spacing:.16em;text-transform:uppercase;margin-bottom:10px}
+.card h3{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:22px;margin-bottom:8px}
+.card p{color:#cbc3e0;font-size:16px}
+.card .quote{font-style:italic;color:#d7cfee;font-size:15.5px;margin-bottom:10px}
+.card.vio{border-color:rgba(183,148,255,.42)} .card.vio .ic{color:var(--vio)}
+.card.coral{border-color:rgba(255,120,73,.42)} .card.coral .ic{color:var(--coral)}
+.card.mint{border-color:rgba(110,231,199,.4)} .card.mint .ic{color:var(--mint)}
+.flowline{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--fog);margin-top:8px}
+
+.loopwrap{display:flex;justify-content:center;margin:6px 0}
+svg{max-width:100%;height:auto}
+.diaglabel{text-align:center;color:var(--fog);font-family:"IBM Plex Mono",monospace;font-size:12.5px;margin-top:10px}
+.diaglabel b{color:var(--gold);font-weight:500}
+
+.note{border-left:3px solid var(--vio);background:rgba(183,148,255,.06);padding:14px 18px;border-radius:0 12px 12px 0;margin-top:20px;font-size:15.5px;color:#e2dbf0}
+.note.warn{border-left-color:var(--rose);background:rgba(255,107,129,.06)}
+
+.cmp{width:100%;border-collapse:collapse;margin-top:6px;font-size:15.5px}
+.cmp th,.cmp td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+.cmp th{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--fog)}
+.cmp td:first-child{color:var(--gold);font-family:"IBM Plex Mono",monospace;font-size:12.5px;white-space:nowrap}
+.cmp .ad{color:var(--vio)} .cmp .mr{color:var(--mint)}
+
+@media(max-width:820px){
+  .grid2,.grid3{grid-template-columns:1fr}
+  body{font-size:16px}
+  .slide{padding:64px 20px 96px}
+}
+</style>
+</head>
+<body>
+
+<div class="badge">94.8% on AndroidWorld · #2</div>
+<div class="pglabel"><span id="cur">1</span> / 3</div>
+
+<div class="deck">
+
+  <!-- SLIDE 1 : HOW IT WORKS -->
+  <section class="slide active">
+    <div class="inner">
+      <span class="snum">01 · How it works</span>
+      <h2>Auto<span class="gl">Device</span> at a glance</h2>
+      <p class="sub">AutoDevice is an autonomous Android agent for app testing. It reached <b>2nd place on AndroidWorld</b> across 20+ real apps. It splits the work into two roles, and it picks a different model for each.</p>
+
+      <div class="grid2">
+        <div class="card vio">
+          <div class="ic">◇ Planner</div>
+          <h3>Strategy</h3>
+          <p class="quote">"Find the save button."</p>
+          <p>Breaks the task into goals. Issues high-level, semantic instructions. Does not tap the screen itself.</p>
+        </div>
+        <div class="card coral">
+          <div class="ic">◆ Executor</div>
+          <h3>Pixel actions</h3>
+          <p class="quote">Justify the action from what is on screen.</p>
+          <p>Turns each goal into a precise pixel tap. Must ground the action in the live screen, so it cannot invent clicks.</p>
+        </div>
+      </div>
+
+      <p class="sub" style="margin:26px 0 12px">AutoDevice does not use one model. A <b>router</b> sends each step to a model that fits its difficulty.</p>
+
+      <div class="loopwrap">
+        <svg viewBox="0 0 860 230" role="img" aria-label="Model router">
+          <defs><marker id="ar" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#b794ff"/></marker></defs>
+          <g font-family="IBM Plex Mono" font-size="13">
+            <rect x="20" y="90" width="150" height="56" rx="11" fill="#15131f" stroke="#2a2740"/>
+            <text x="95" y="114" fill="#f0ecf7" text-anchor="middle">Task step</text>
+            <text x="95" y="133" fill="#9a93b5" text-anchor="middle" font-size="11">+ difficulty</text>
+
+            <polygon points="250,118 320,80 390,118 320,156" fill="#15131f" stroke="#ffd166"/>
+            <text x="320" y="122" fill="#ffd166" text-anchor="middle" font-size="12">ROUTER</text>
+
+            <rect x="470" y="14" width="220" height="52" rx="11" fill="#15131f" stroke="#6ee7c7"/>
+            <text x="580" y="38" fill="#6ee7c7" text-anchor="middle">Claude Haiku</text>
+            <text x="580" y="56" fill="#9a93b5" text-anchor="middle" font-size="11">executor · every step</text>
+
+            <rect x="470" y="86" width="220" height="52" rx="11" fill="#15131f" stroke="#b794ff"/>
+            <text x="580" y="110" fill="#b794ff" text-anchor="middle">Claude Sonnet</text>
+            <text x="580" y="128" fill="#9a93b5" text-anchor="middle" font-size="11">planner · easy / medium</text>
+
+            <rect x="470" y="158" width="220" height="52" rx="11" fill="#15131f" stroke="#ff7849"/>
+            <text x="580" y="182" fill="#ff7849" text-anchor="middle">Gemini 3 Pro</text>
+            <text x="580" y="200" fill="#9a93b5" text-anchor="middle" font-size="11">planner · hard steps</text>
+          </g>
+          <g stroke="#b794ff" stroke-width="1.6" fill="none" marker-end="url(#ar)">
+            <path d="M172,118 L246,118"/>
+            <path d="M392,108 C430,80 432,52 466,46"/>
+            <path d="M392,118 C430,114 432,112 466,112"/>
+            <path d="M392,128 C430,156 432,180 466,184"/>
+          </g>
+        </svg>
+      </div>
+      <p class="diaglabel">easy and medium go to Sonnet. hard steps go to Gemini 3 Pro. the executor is always Haiku. all use <b>prompt caching</b>.</p>
+    </div>
+  </section>
+
+  <!-- SLIDE 2 : SUPPORTING MACHINERY -->
+  <section class="slide">
+    <div class="inner">
+      <span class="snum">02 · The supporting parts</span>
+      <h2>What holds the <span class="gl">score</span> up</h2>
+      <p class="sub">Three systems do the heavy lifting behind the planner and executor.</p>
+
+      <div class="grid3">
+        <div class="card mint">
+          <div class="ic">perception</div>
+          <h3>Screen Transcription</h3>
+          <p>A dedicated agent reads the text on screen, like OCR, at <b>93%+ accuracy</b>. It runs before any action, so the executor knows what is really there.</p>
+        </div>
+        <div class="card vio">
+          <div class="ic">recovery</div>
+          <h3>Narrative Feedback</h3>
+          <p>When a step fails, it returns a plain-language summary of what happened, not an error code. The planner reads it and can switch to a new approach.</p>
+        </div>
+        <div class="card coral">
+          <div class="ic">memory</div>
+          <h3>Scratchpad</h3>
+          <p>A key-value store that survives app restarts and long contexts. It lets the agent carry data across apps during multi-step tasks.</p>
+        </div>
+      </div>
+
+      <p class="sub" style="margin:26px 0 12px">A few field notes they call out from real runs.</p>
+      <div class="grid3">
+        <div class="card"><div class="ic" style="color:var(--gold)">+30% speed</div><h3 style="font-size:18px">Search, do not scroll</h3><p style="font-size:14.5px">Agents are about 30% faster when they look for a Filter or Search icon instead of scrolling.</p></div>
+        <div class="card"><div class="ic" style="color:var(--gold)">reliability</div><h3 style="font-size:18px">Verify after typing</h3><p style="font-size:14.5px">Android text input is unreliable. Always re-read the field after typing.</p></div>
+        <div class="card"><div class="ic" style="color:var(--gold)">cost</div><h3 style="font-size:18px">Prompt caching</h3><p style="font-size:14.5px">Caching cut cost and latency on long multi-step tasks.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SLIDE 3 : VS MOBILERUN -->
+  <section class="slide">
+    <div class="inner">
+      <span class="snum">03 · Side by side</span>
+      <h2>AutoDevice vs <span class="gl">MobileRun</span></h2>
+      <p class="sub">Both split planning from action. They differ on how they see the screen and how they pick models.</p>
+
+      <div style="overflow-x:auto">
+      <table class="cmp">
+        <tr><th>Dimension</th><th class="ad">AutoDevice</th><th class="mr">MobileRun</th></tr>
+        <tr><td>AndroidWorld</td><td class="ad">94.8% · #2</td><td class="mr">91.4%</td></tr>
+        <tr><td>Architecture</td><td class="ad">Planner to Executor</td><td class="mr">Manager to Executor, single-action loop</td></tr>
+        <tr><td>Models</td><td class="ad">Router: Sonnet, Gemini 3 Pro, Haiku</td><td class="mr">One model per role, configurable</td></tr>
+        <tr><td>Perception</td><td class="ad">Vision plus OCR (93%+), pixel grounding</td><td class="mr">Accessibility tree, indexed boxes, pixel fallback</td></tr>
+        <tr><td>Recovery</td><td class="ad">Narrative summaries</td><td class="mr">Error flag, planner re-plans from state</td></tr>
+        <tr><td>Memory</td><td class="ad">Key-value scratchpad</td><td class="mr">Append-only notes in the prompt</td></tr>
+        <tr><td>Openness</td><td class="ad">Closed, blog only</td><td class="mr">Open source, repo and docs</td></tr>
+      </table>
+      </div>
+
+      <div class="note warn">
+        Read with care. This is a vendor blog, not a paper. There are no public ablations and no leaderboard link. The numbers (94.8%, #2) are self-reported. Treat the architecture as the takeaway and the numbers as marketing.
+      </div>
+      <a class="arrow" href="../mobilerun/index.html" style="margin-top:16px;display:inline-block;text-decoration:none">↳ open the MobileRun deck</a>
+    </div>
+  </section>
+
+</div>
+
+<div class="nav">
+  <button class="arrow" id="prev">← prev</button>
+  <div class="dots" id="dots"></div>
+  <button class="arrow" id="next">next →</button>
+</div>
+
+<script>
+const slides=[...document.querySelectorAll('.slide')];
+const dotsBox=document.getElementById('dots');
+let i=0;
+slides.forEach((_,n)=>{const b=document.createElement('button');b.className='dot'+(n===0?' on':'');b.onclick=()=>go(n);dotsBox.appendChild(b)});
+const dots=[...document.querySelectorAll('.dot')];
+function go(n){i=Math.max(0,Math.min(slides.length-1,n));
+  slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+  dots.forEach((d,k)=>d.classList.toggle('on',k===i));
+  document.getElementById('cur').textContent=i+1;
+}
+document.getElementById('next').onclick=()=>go(i+1);
+document.getElementById('prev').onclick=()=>go(i-1);
+addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='PageDown')go(i+1);if(e.key==='ArrowLeft'||e.key==='PageUp')go(i-1)});
+</script>
+</body>
+</html>

@@ -188,11 +188,11 @@ class EvalRunner:
                     results.extend(failed_tasks[instance_name])
                     continue
 
-                episode, exc = self._run_task(instance, demo_mode)
+                episode, exc = self._run_task(instance, demo_mode, instance_idx=i)
 
                 if exc is not None and self._is_emulator_dead(exc):
                     self._restart_env()
-                    episode, exc = self._run_task(instance, demo_mode)
+                    episode, exc = self._run_task(instance, demo_mode, instance_idx=i)
 
                 episode[constants.EpisodeConstants.AGENT_NAME] = self.agent.name
                 episode[constants.EpisodeConstants.INSTANCE_ID] = i
@@ -242,9 +242,15 @@ class EvalRunner:
         self,
         task: task_eval.TaskEval,
         demo_mode: bool,
+        instance_idx: int = 0,
     ) -> Tuple[Dict[str, Any], Optional[Exception]]:
         """Run single task, returning (episode, exception_or_None)."""
         start = time.time()
+
+        # Stamp the instance index onto the agent so SFT output paths don't collide
+        # across the n_task_combinations instances that share a single repeat_id.
+        if hasattr(self.agent, 'instance_idx'):
+            self.agent.instance_idx = instance_idx
 
         try:
             if task.start_on_home_screen:

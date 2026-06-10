@@ -38,6 +38,8 @@ def get_agent(config: dict, env, llm_client, repeat_id: int = 0) -> BaseEvalAgen
             sft_data_dir=config.get('sft_data_dir'),
             n_history_image=config.get('n_history_image', 0),
             repeat_id=repeat_id,
+            task_hints=config.get('task_hints'),
+            print_thought_action=config.get('print_thought_action', False),
         )
     else:
         raise ValueError(f"Unsupported Agent type: {agent_type}")

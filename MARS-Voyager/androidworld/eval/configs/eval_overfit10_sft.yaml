@@ -1,0 +1,60 @@
+# Android World Evaluation Config - Overfit 10 (SFT checkpoint)
+#
+# SFT-checkpoint counterpart to eval_overfit10_base.yaml. Identical config
+# except `llm.model` points at the vLLM-served SFT checkpoint. Same
+# task_random_seed and n_task_combinations → directly comparable per-task
+# outcomes vs baseline. Aggregate as mean success rate (successes / trials).
+#
+# Plan: tasks/training-codebase/sft-data/overfit-10-tasks.html
+
+env:
+  console_port: 5556
+  grpc_port: 8554
+  adb_path: ~/Android/Sdk/platform-tools/adb
+  emulator_path: ~/Android/Sdk/emulator/emulator
+  avd_name: AndroidWorldAvd
+  android_sdk_root: ~/Android/Sdk/
+  android_avd_home: ~/.android/avd/
+
+llm:
+  type: openai
+  base_url: http://localhost:9000
+  # Must match the --served-model-name passed to `vllm serve` for the
+  # SFT checkpoint at training/checkpoints/sft_qwen3vl_4b_v0_1/global_step_710/huggingface
+  model: sft_qwen3vl_4b_v0_1_step710
+  temperature: 0.0
+  max_tokens: 16384
+  top_p: 1
+  max_retry: 3
+  retry_delay: 1.0
+
+agent:
+  type: local
+  name: Qwen3VL-Agent
+  model_name: qwen3vl
+  prompt_name: qwen3vl_instruct
+  wait_after_action_seconds: 2
+  use_som: false
+  resize: null
+  history_len: 30
+  sft_data_dir: ./sft_data
+  n_history_image: 0
+
+eval:
+  suite_family: android_world
+  # Step budget per task = int(2 * optimal_steps); see MARS-Voyager/CLAUDE.md.
+  tasks:
+    - ContactsAddContact       # optimal  5, budget 10
+    - MarkorCreateNote         # optimal  8, budget 16
+    - FilesMoveFile            # optimal 10, budget 20
+    - ClockTimerEntry          # optimal  3, budget  6
+    - AudioRecorderRecordAudio # optimal  6, budget 12
+    - ExpenseAddSingle         # optimal  6, budget 12
+    - ExpenseDeleteSingle      # optimal  3, budget  6
+    - MarkorDeleteAllNotes     # optimal  7, budget 14
+    - ClockStopWatchRunning    # optimal  3, budget  6
+    - BrowserMaze              # optimal  9, budget 18
+  n_task_combinations: 3
+  task_random_seed: 42
+  checkpoint_dir: ""
+  output_path: ~/android_world/runs

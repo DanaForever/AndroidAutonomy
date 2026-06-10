@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manual Android Curation</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">Manual Android Curation</div>
+      <h1 id="taskName">Loading task...</h1>
+      <p id="taskGoal"></p>
+      <div id="taskParams" class="params-grid"></div>
+    </div>
+    <div class="status-grid">
+      <div><span>ADB</span><strong id="adbStatus">checking</strong></div>
+      <div><span>Budget</span><strong id="budget">-</strong></div>
+      <div><span>Optimal</span><strong id="optimalSteps">-</strong></div>
+      <div><span>Saved</span><strong id="savedCount">0</strong></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="viewer-panel">
+      <div class="toolbar">
+        <button id="captureBtn">Capture</button>
+        <button id="clearCoordsBtn">Clear Coords</button>
+        <span id="coordStatus">live: -, frozen: -, end: -</span>
+      </div>
+      <div id="imageWrap" class="image-wrap">
+        <img id="screenshot" alt="Current Android screenshot">
+        <div id="crosshairX" class="crosshair x"></div>
+        <div id="crosshairY" class="crosshair y"></div>
+        <div id="hoverBadge" class="hover-badge">No screenshot</div>
+      </div>
+    </section>
+
+    <aside class="side-panel">
+      <section>
+        <h2>Success Criteria</h2>
+        <p id="successCriteria"></p>
+        <div id="successChecks" class="stack"></div>
+      </section>
+
+      <section>
+        <h2>Action</h2>
+        <label>
+          Type
+          <select id="actionType">
+            <option value="click">click</option>
+            <option value="long_press">long_press</option>
+            <option value="swipe">swipe</option>
+            <option value="type">type</option>
+            <option value="system_button">system_button</option>
+            <option value="wait">wait</option>
+            <option value="terminate">terminate</option>
+          </select>
+        </label>
+        <label id="textRow">
+          Text
+          <input id="textInput" type="text" placeholder="text to type">
+        </label>
+        <label id="buttonRow">
+          Button
+          <select id="buttonInput">
+            <option>Back</option>
+            <option>Home</option>
+            <option>Enter</option>
+          </select>
+        </label>
+        <label id="durationRow">
+          Duration ms
+          <input id="durationInput" type="number" value="400" min="0">
+        </label>
+        <label>
+          Human note
+          <textarea id="humanNote" rows="2" placeholder="why this action is next"></textarea>
+        </label>
+        <label class="inline">
+          <input id="stepVerified" type="checkbox">
+          Step verified
+        </label>
+      </section>
+
+      <section>
+        <h2>Commands</h2>
+        <CommandBlock>
+          <label>ADB command</label>
+          <pre id="adbCommand"></pre>
+          <div class="button-row">
+            <button id="copyAdbBtn">Copy</button>
+            <button id="runAdbBtn">Run</button>
+          </div>
+        </CommandBlock>
+        <CommandBlock>
+          <label>Qwen tool call</label>
+          <pre id="toolCall"></pre>
+          <div class="button-row">
+            <button id="copyToolBtn">Copy</button>
+          </div>
+        </CommandBlock>
+        <button id="recordBtn" class="primary">Record Action</button>
+      </section>
+
+      <section>
+        <h2>End Trajectory</h2>
+        <label class="inline">
+          <input id="successVerified" type="checkbox">
+          Success verified
+        </label>
+        <label>
+          Verification evidence
+          <textarea id="verificationMethod" rows="2" placeholder="e.g. settings command returned 1"></textarea>
+        </label>
+        <div class="button-row">
+          <button id="addTerminateBtn">Add terminate(success)</button>
+          <button id="saveTrajectoryBtn" class="primary">Save trajectory</button>
+          <button id="discardBtn" class="danger">Discard draft</button>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <section class="trace-section">
+    <h2>Current Trace</h2>
+    <div id="messages" class="messages"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Screenshot</th>
+          <th>Action</th>
+          <th>ADB</th>
+          <th>Note</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="traceRows"></tbody>
+    </table>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

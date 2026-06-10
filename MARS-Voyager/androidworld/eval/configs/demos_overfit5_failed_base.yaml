@@ -1,0 +1,61 @@
+# Android World Demo-Generation Config - Overfit 5 (always-failed, base demonstrator)
+#
+# Sibling of demos_overfit5_failed.yaml. Same 5 tasks, same temperature lever,
+# but the demonstrator is base Qwen3-VL-4B-Instruct instead of UI-Voyager.
+#
+# Motivation: empirically, UI-Voyager at T=1.0 still consistently fails some
+# tasks (e.g. CameraTakePhoto). Its fine-tuning has pushed it into a
+# failure-mode attractor that temperature noise alone can't dislodge. Base
+# Qwen3-VL-4B-Instruct hasn't been fine-tuned into that attractor, so it may
+# produce different — and possibly successful — trajectories on these tasks.
+#
+# Only successful rollouts land in sft_data_dir (gate verified in Phase 1.1).
+# Successes from this run can be pooled with successes from the UI-Voyager run
+# into the same SFT dataset.
+#
+# Plan: tasks/training-codebase/sft-overfit-failed/plan.html
+
+env:
+  console_port: 5556
+  grpc_port: 8554
+  adb_path: ~/Android/Sdk/platform-tools/adb
+  emulator_path: ~/Android/Sdk/emulator/emulator
+  avd_name: AndroidWorldAvd
+  android_sdk_root: ~/Android/Sdk/
+  android_avd_home: ~/.android/avd/
+
+llm:
+  type: openai
+  base_url: http://localhost:9000
+  model: Qwen3-VL-4B-Instruct
+  temperature: 1.0
+  max_tokens: 16384
+  top_p: 1
+  max_retry: 3
+  retry_delay: 1.0
+
+agent:
+  type: local
+  name: Qwen3VL-Agent
+  model_name: qwen3vl
+  prompt_name: qwen3vl_instruct
+  wait_after_action_seconds: 2
+  use_som: false
+  resize: null
+  history_len: 30
+  sft_data_dir: ./sft_data
+  n_history_image: 0
+
+eval:
+  suite_family: android_world
+  # Step budget per task = int(10 * task.complexity); all 5 tasks have complexity=1 → budget=10.
+  tasks:
+    - NotesTodoItemCount               # optimal 5, budget 10
+    - SimpleCalendarEventsInNextWeek   # optimal 3, budget 10
+    - SystemBrightnessMin              # optimal 3, budget 10
+    - SystemCopyToClipboard
+    - MarkorAddNoteHeader
+  n_task_combinations: 50
+  task_random_seed: 42
+  checkpoint_dir: ""
+  output_path: ~/android_world/runs

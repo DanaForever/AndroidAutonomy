@@ -40,6 +40,8 @@ class QwenAgent(BaseEvalAgent):
         sft_data_dir: Optional[str] = None,
         n_history_image: int = 0,
         repeat_id: int = 0,
+        task_hints: Optional[Dict[str, str]] = None,
+        print_thought_action: bool = False,
         **kwargs,
     ):
         super().__init__(env, name, transition_pause=1.0)
@@ -57,6 +59,11 @@ class QwenAgent(BaseEvalAgent):
         self.sft_data_dir = sft_data_dir
         self.n_history_image = n_history_image
         self.repeat_id = repeat_id
+        self.task_hints = task_hints or {}
+        self.print_thought_action = print_thought_action
+        # Per-suite-instance counter so n_task_combinations > 1 doesn't overwrite
+        # rollouts. Set by EvalRunner._run_task before each instance executes.
+        self.instance_idx = 0
         
         self._history = []
         self._original_size = None
@@ -84,6 +91,8 @@ class QwenAgent(BaseEvalAgent):
     
     def step(self, goal: str, task_name: Optional[str] = None) -> AgentStepResult:
         """Execute one step"""
+        if task_name and task_name in self.task_hints:
+            goal = f"{goal}\n\nHint: {self.task_hints[task_name]}"
         step_data = {
             'goal': goal,
             'before_screenshot': None,
@@ -121,6 +130,8 @@ class QwenAgent(BaseEvalAgent):
             
             step_data['model_response'] = response
             logging.info(f'Model response: {response}')
+            if self.print_thought_action:
+                self._log_thought_action(response)
             
             self._save_sft_data(
                 goal=goal,
@@ -183,7 +194,9 @@ class QwenAgent(BaseEvalAgent):
         os.makedirs(task_dir, exist_ok=True)
         
         suffix = 'succ' if success else 'fail'
-        jsonl_filename = f'repeat_{self.repeat_id:02d}_{suffix}.jsonl'
+        jsonl_filename = (
+            f'repeat_{self.repeat_id:02d}_inst_{self.instance_idx:03d}_{suffix}.jsonl'
+        )
         jsonl_path = os.path.join(task_dir, jsonl_filename)
         
         with open(jsonl_path, 'w', encoding='utf-8') as f:
@@ -345,6 +358,26 @@ class QwenAgent(BaseEvalAgent):
         else:
             content = later_half.split('\n')[0]
         return content
+
+    def _extract_prefixed_line(self, response: str, prefix: str) -> str:
+        """Extract a single line after a response prefix like Thought:."""
+        match = re.search(rf'^{re.escape(prefix)}\s*(.*)$', response, flags=re.MULTILINE)
+        return match.group(1).strip() if match else ''
+
+    def _log_thought_action(self, response: str) -> None:
+        """Log a compact Thought/Action summary for eval traces."""
+        thought = self._extract_prefixed_line(response, 'Thought:')
+        action = self._extract_prefixed_line(response, 'Action:')
+
+        if not action:
+            action = self._extract_tag_content(response, 'action')
+        if not thought:
+            thought = self._extract_tag_content(response, 'thinking')
+
+        logging.info('Thought: %s', thought or '<missing>')
+        logging.info('Action: %s', action or '<missing>')
+        print(f'Thought: {thought or "<missing>"}')
+        print(f'Action: {action or "<missing>"}')
     
     def _get_action_description(self, response: str) -> str:
         """Get action description"""
@@ -392,7 +425,7 @@ class QwenAgent(BaseEvalAgent):
             
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             image_id = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
-            image_filename = f'repeat{self.repeat_id:02d}-step{len(self._history)}-{timestamp}-{image_id}.png'
+            image_filename = f'repeat{self.repeat_id:02d}-inst{self.instance_idx:03d}-step{len(self._history)}-{timestamp}-{image_id}.png'
             image_path = os.path.join(self._current_task_images_dir, image_filename)
             cv2.imwrite(image_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
             

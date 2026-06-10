@@ -29,6 +29,24 @@ test_port.py
 # Android
 *.apk
 
-# External training framework clone
-training/verl
-training/data/sft_v0
+# AI agents
+.codex
+
+# Vendored training framework (re-clone via training/PINS.md)
+training/verl/
+
+# Built SFT datasets (large; sync separately or reproduce via training/data builders)
+training/data/sft_*/*.parquet
+training/data/sft_*/stats/
+
+# Manual curation outputs (large generated traces/images)
+training/data/manual_curation/raw/
+training/data/manual_curation/annotated*/
+training/data/manual_curation/qwen_jsonl*/
+
+# Training checkpoints (large; reproduced via training/scripts/run_sft.sh)
+training/checkpoints/
+training/logs/
+
+# local files
+MARS-Voyager/run_android_world_local.sh

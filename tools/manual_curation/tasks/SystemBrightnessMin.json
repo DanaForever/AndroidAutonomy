@@ -1,0 +1,17 @@
+{
+  "task_name": "SystemBrightnessMin",
+  "goal": "Turn brightness to the min value.",
+  "budget": 10,
+  "optimal_steps": 3,
+  "success_criteria": "The Android system brightness setting is at the minimum value and the task evaluator would pass.",
+  "verification_hint": "Run the brightness settings command after dragging the slider left. Record the returned value in the terminal-step verification note.",
+  "success_checks": [
+    {
+      "label": "Read system brightness",
+      "kind": "adb_shell",
+      "command": "adb shell settings get system screen_brightness",
+      "expected": "The minimum value for this emulator image, usually 1.",
+      "safe_to_run": true
+    }
+  ]
+}

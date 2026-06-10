@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Manual Data Curation for Always-Failed Tasks</title>
+<style>
+  :root {
+    --fg: #1c1f24;
+    --muted: #5c6370;
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --border: #e1e4e8;
+    --accent: #2f6feb;
+    --accent-soft: #dbe7ff;
+    --warn: #b85c00;
+    --warn-soft: #fff3e0;
+    --ok: #1f7a3a;
+    --ok-soft: #e3f6e8;
+    --risk: #b3261e;
+    --risk-soft: #fdecea;
+    --code-bg: #f4f5f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    color: var(--fg);
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 28px 80px; }
+  h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: -0.01em; }
+  h2 { margin: 38px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); font-size: 22px; }
+  h3 { margin: 22px 0 8px; font-size: 17px; }
+  p, ul, ol { margin: 8px 0; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 3px 0; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+  pre {
+    margin: 8px 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    color: #d6dae0;
+    background: #0f1419;
+    border-radius: 8px;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  pre code { padding: 0; color: inherit; background: none; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13.5px; }
+  th, td { border: 1px solid var(--border); padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f2f5; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .card {
+    margin: 14px 0;
+    padding: 20px 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .callout {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    background: var(--accent-soft);
+    font-size: 14px;
+  }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+  .callout.risk { border-left-color: var(--risk); background: var(--risk-soft); }
+  .toc {
+    padding: 14px 22px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 14px;
+  }
+  .toc ol { columns: 2; column-gap: 30px; margin: 4px 0; }
+  .pill {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .pill.todo { background: var(--warn-soft); color: var(--warn); }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.risk { background: var(--risk-soft); color: var(--risk); }
+  .small { color: var(--muted); font-size: 13px; }
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 28px 0 8px;
+  }
+  .step .num {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: 50%;
+    color: #fff;
+    background: var(--accent);
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .step h2 { flex: 1; margin: 0; padding: 0; border: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Manual Data Curation for Always-Failed Tasks</h1>
+<div class="meta">
+  Plan for a lightweight local screenshot coordinate picker, smooth ADB capture loop, simple raw trace format, and AI-assisted thought/action text generation for Phase 2b of <a href="../sft-overfit-failed/plan.html">SFT overfit on always-failed tasks</a>.<br>
+  Date: 2026-05-17
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#decision">Key decision</a></li>
+    <li><a href="#target">Target workflow</a></li>
+    <li><a href="#ui">Coordinate picker UI</a></li>
+    <li><a href="#capture">Smooth screenshot capture</a></li>
+    <li><a href="#schema">Raw trace format</a></li>
+    <li><a href="#thoughts">AI thought generation</a></li>
+    <li><a href="#builder">Training dataset builder</a></li>
+    <li><a href="#tasks">Task order</a></li>
+    <li><a href="#deliverables">Deliverables</a></li>
+    <li><a href="#open">Open questions</a></li>
+  </ol>
+</div>
+
+<h2 id="decision">1. Key Decision</h2>
+<div class="card">
+  <p><strong>Collect a simple raw manual trace first; convert to SFT later.</strong> We do not need to force the human curation tool to emit <code>repeat_00_inst_000_succ.jsonl</code>. The curation UI should optimize for speed and correctness while collecting screenshots, pixel coordinates, ADB commands, and action metadata. A separate builder can later render Qwen-style <code>messages</code>, normalized coordinates, thoughts, tool calls, and parquet rows.</p>
+  <div class="callout ok">
+    This splits the problem cleanly: the UI is a fast annotation and ADB helper; the builder owns training-format compatibility.
+  </div>
+</div>
+
+<h2 id="target">2. Target Workflow</h2>
+<div class="card">
+  <ol>
+    <li>Start or connect ADB to the emulator/device.</li>
+    <li>Start a local curation server for one task.</li>
+    <li>Open the browser UI at <code>http://127.0.0.1:8765</code>.</li>
+    <li>Select or confirm the task session: task name, goal, budget, optimal steps, success criteria, and output directory.</li>
+    <li>Press <code>c</code> or click <code>Capture</code> to pull the current device screenshot via ADB.</li>
+    <li>Hover on the screenshot to inspect pixel coordinates and normalized Qwen coordinates.</li>
+    <li>Press <code>s</code> to freeze the primary coordinate. For swipe, press <code>e</code> to freeze the secondary coordinate.</li>
+    <li>Copy or run the generated ADB command, for example <code>adb shell input tap X_PIXEL Y_PIXEL</code>.</li>
+    <li>Record the action into the raw trace with a short human note such as "tap Display" or "drag brightness slider to minimum".</li>
+    <li>Repeat: capture next screenshot before the next action.</li>
+    <li>After the side effect is verified, add a final <code>terminate(success)</code> action and click <code>Save trajectory</code>. The server writes a complete trajectory folder and increments the saved-trajectory count.</li>
+  </ol>
+</div>
+
+<h2 id="ui">3. Coordinate Picker UI</h2>
+<div class="card">
+  <h3>3.1 MVP Layout</h3>
+  <table>
+    <thead><tr><th>Region</th><th>Behavior</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Task header</td>
+        <td>Shows task name, goal, step budget, optimal step count, number of saved trajectories, and task success criteria. Success criteria should appear in two forms when available: human-readable text and copyable/runnable verification commands. This should be visible at all times so the operator does not curate against the wrong goal.</td>
+      </tr>
+      <tr>
+        <td>Screenshot viewport</td>
+        <td>Displays the current PNG at a stable scale. Cursor hover shows crosshair, pixel coordinate, and Qwen-normalized coordinate. The UI must calculate coordinates from the image's natural dimensions, not the displayed CSS size.</td>
+      </tr>
+      <tr>
+        <td>Coordinate status bar</td>
+        <td>Shows live coordinate, frozen primary coordinate, frozen secondary coordinate, image size, and current step number.</td>
+      </tr>
+      <tr>
+        <td>Action side panel</td>
+        <td>Shows copy buttons for <code>tap</code>, <code>long_press</code>, <code>swipe</code>, <code>type</code>, <code>keyevent</code>, <code>wait</code>, <code>terminate</code>, and Qwen tool-call JSON.</td>
+      </tr>
+      <tr>
+        <td>Trace panel</td>
+        <td>Shows recorded steps with screenshot filename, action type, pixel coordinates, generated ADB command, human note, and validation warnings. Includes <code>Save trajectory</code>, <code>Start next trajectory</code>, and <code>Discard trajectory</code> controls.</td>
+      </tr>
+      <tr>
+        <td>Success criteria panel</td>
+        <td>Shows the task-specific pass condition, verification checklist, and command snippets such as <code>adb shell settings get system screen_brightness</code>. Each command has <code>Copy</code>; safe read-only commands may also have <code>Run</code> and display stdout inline.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>3.2 Keyboard Contract</h3>
+  <table>
+    <thead><tr><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><code>c</code></td><td>Capture current screenshot from ADB and load it as the current step screenshot.</td></tr>
+      <tr><td><code>s</code></td><td>Freeze the current hover point as the primary coordinate.</td></tr>
+      <tr><td><code>e</code></td><td>Freeze the current hover point as the secondary coordinate for swipe.</td></tr>
+      <tr><td><code>r</code></td><td>Clear frozen coordinates for the current step.</td></tr>
+      <tr><td><code>a</code></td><td>Append the selected action to <code>trace.json</code>.</td></tr>
+      <tr><td><code>n</code></td><td>Advance to next step after recording an action.</td></tr>
+      <tr><td><code>Ctrl+s</code></td><td>Save the current trajectory after a terminal success action exists.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3.3 Coordinate Rules</h3>
+  <p>ADB commands use physical screenshot pixels. Qwen tool calls use the model's normalized <code>999x999</code> coordinate system. Store both in the raw trace.</p>
+  <pre><code>x_qwen = round(x_pixel * 999 / screenshot_width)
+y_qwen = round(y_pixel * 999 / screenshot_height)</code></pre>
+  <p>For a <code>swipe</code>, apply the same conversion to both endpoints.</p>
+
+  <h3>3.4 Generated Commands</h3>
+  <pre><code>adb shell input tap X_PIXEL Y_PIXEL
+adb shell input swipe X1_PIXEL Y1_PIXEL X2_PIXEL Y2_PIXEL 400
+adb shell input text 'escaped_text'
+adb shell input keyevent KEYCODE_BACK</code></pre>
+  <p class="small">If a device id is configured, the server can also show the fully qualified form: <code>adb -s emulator-5554 shell input tap X_PIXEL Y_PIXEL</code>. The copy button should default to the shorter form requested above.</p>
+</div>
+
+<h2 id="capture">4. Smooth Screenshot Capture</h2>
+<div class="card">
+  <h3>4.1 ADB Startup</h3>
+  <p>The server should not assume ADB is already healthy. On startup it should run a small preflight and show the result in the UI header.</p>
+  <pre><code># Option A: Android emulator already running
+adb start-server
+adb devices -l
+
+# Optional, when multiple devices are attached
+export ANDROID_SERIAL=emulator-5554
+adb -s emulator-5554 wait-for-device
+
+# Basic readiness checks
+adb -s emulator-5554 shell wm size
+adb -s emulator-5554 shell wm density
+adb -s emulator-5554 exec-out screencap -p &gt; /tmp/manual-curation-probe.png</code></pre>
+  <p>If no device is attached, the UI should show a blocking <code>ADB offline</code> state with the exact command output from <code>adb devices -l</code>. If more than one device is attached and no <code>--device</code> is passed, fail fast and ask for an explicit serial.</p>
+
+  <h3>4.2 Recommended Architecture</h3>
+  <p>A plain static HTML file can display an uploaded image and copy commands, but it cannot run <code>adb</code> or reliably access the clipboard from <code>file://</code>. The practical setup is a tiny local Python server plus a single HTML page.</p>
+  <pre><code>python3 tools/manual_curation/serve.py \
+  --device emulator-5554 \
+  --task SystemBrightnessMin \
+  --task-config tools/manual_curation/tasks/SystemBrightnessMin.json \
+  --out training/data/manual_curation/raw</code></pre>
+  <p>The server exposes only localhost endpoints:</p>
+  <table>
+    <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /</code></td><td>Serve the HTML coordinate picker.</td></tr>
+      <tr><td><code>GET /device_status</code></td><td>Return ADB serial, connection state, screen size, density, and last preflight error.</td></tr>
+      <tr><td><code>GET /task</code></td><td>Return task name, goal, budget, optimal steps, success criteria, verification commands, saved trajectory count, and current trajectory id.</td></tr>
+      <tr><td><code>POST /capture</code></td><td>Run <code>adb exec-out screencap -p</code>, write <code>screens/step_NNN.png</code>, return image URL and dimensions.</td></tr>
+      <tr><td><code>POST /record_action</code></td><td>Append one action to <code>trace.json</code>.</td></tr>
+      <tr><td><code>POST /run_adb</code></td><td>Optional convenience: execute the generated ADB command after explicit button click.</td></tr>
+      <tr><td><code>POST /save_trajectory</code></td><td>Validate and atomically finalize the current trajectory as <code>trajectories/traj_XXXX/trace.json</code>.</td></tr>
+      <tr><td><code>POST /new_trajectory</code></td><td>Create the next empty trajectory folder for the same task.</td></tr>
+      <tr><td><code>GET /trace</code></td><td>Return current trace for refresh/recovery.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.3 Capture Loop</h3>
+  <ol>
+    <li>Before each action, press <code>c</code>. This captures the screenshot the model would see before acting.</li>
+    <li>Pick coordinates and record the action.</li>
+    <li>Run the ADB command from the terminal or from the UI.</li>
+    <li>Wait for UI state to settle.</li>
+    <li>Press <code>c</code> again for the next pre-action screenshot.</li>
+  </ol>
+  <div class="callout warn">
+    The screenshot belongs to the state before the action, not after it. This matters because each SFT row trains "given this screenshot, produce this action".
+  </div>
+
+  <h3>4.4 Automatic Trajectory Save</h3>
+  <p>The UI should continuously autosave a draft after every screenshot capture and recorded action. The draft path is stable:</p>
+  <pre><code>training/data/manual_curation/raw/SystemBrightnessMin/.draft/trace.json
+training/data/manual_curation/raw/SystemBrightnessMin/.draft/screens/step_000.png</code></pre>
+  <p>When the operator clicks <code>Save trajectory</code>, the server validates the draft and moves it atomically into the next trajectory id:</p>
+  <pre><code>training/data/manual_curation/raw/SystemBrightnessMin/trajectories/traj_0000/trace.json
+training/data/manual_curation/raw/SystemBrightnessMin/trajectories/traj_0000/screens/step_000.png
+training/data/manual_curation/raw/SystemBrightnessMin/trajectories/traj_0000/screens/step_001.png</code></pre>
+  <p>The save should fail with a visible error if any required condition is missing:</p>
+  <ul>
+    <li>Task metadata is present.</li>
+    <li>At least one non-terminal action exists.</li>
+    <li>Exactly one final <code>terminate(success)</code> action exists.</li>
+    <li>Every non-terminal action has a screenshot.</li>
+    <li>Every coordinate action has in-range pixel and Qwen coordinates.</li>
+    <li>The operator checked <code>success verified</code> and optionally entered verification evidence.</li>
+  </ul>
+  <p>After a successful save, the UI increments <code># trajectories saved</code>, clears the draft, and starts <code>traj_0001</code> for the same task.</p>
+
+  <h3>4.5 Fallback Without Server</h3>
+  <p>If we want an even smaller MVP, use a static HTML page with drag-and-drop image loading and this shell loop:</p>
+  <pre><code>mkdir -p /tmp/manual-curation
+adb exec-out screencap -p &gt; /tmp/manual-curation/step_000.png</code></pre>
+  <p>This is enough for coordinate picking, but capture and trace saving remain manual. Use it only for validating the UI math.</p>
+</div>
+
+<h2 id="schema">5. Raw Trace Format</h2>
+<div class="card">
+  <p>Store one <code>trace.json</code> per successful demo. The trace is human-editable, easy to diff, and not tied to the current SFT build script.</p>
+  <pre><code>{
+  "schema_version": "manual_trace_v1",
+  "task_name": "SystemBrightnessMin",
+  "goal": "Turn brightness to the min value.",
+  "trajectory_id": "traj_0000",
+  "budget": 10,
+  "optimal_steps": 3,
+  "success_criteria": "The Android system brightness setting is at the minimum value and the task evaluator would pass.",
+  "success_checks": [
+    {
+      "label": "Read system brightness",
+      "kind": "adb_shell",
+      "command": "adb shell settings get system screen_brightness",
+      "expected": "minimum value for this emulator image"
+    }
+  ],
+  "verification": {
+    "success_verified": true,
+    "method": "adb shell settings get system screen_brightness returned 1"
+  },
+  "device": {
+    "adb_serial": "emulator-5554",
+    "screen_width": 1080,
+    "screen_height": 1920
+  },
+  "steps": [
+    {
+      "step_index": 0,
+      "screenshot": "screens/step_000.png",
+      "action": {
+        "type": "click",
+        "pixel": [540, 1210],
+        "qwen": [500, 630]
+      },
+      "adb_command": "adb shell input tap 540 1210",
+      "human_note": "tap Display in Settings",
+      "verified": true
+    },
+    {
+      "step_index": 1,
+      "screenshot": "screens/step_001.png",
+      "action": {
+        "type": "swipe",
+        "pixel": [[930, 335], [85, 335]],
+        "qwen": [[860, 174], [79, 174]],
+        "duration_ms": 400
+      },
+      "adb_command": "adb shell input swipe 930 335 85 335 400",
+      "human_note": "drag brightness slider to the minimum",
+      "verified": true
+    },
+    {
+      "step_index": 2,
+      "screenshot": "screens/step_002.png",
+      "action": {
+        "type": "terminate",
+        "status": "success"
+      },
+      "human_note": "brightness value verified at minimum",
+      "verified": true
+    }
+  ]
+}</code></pre>
+  <p>Every non-terminal action should have a screenshot and either pixel coordinates, text, button, or wait duration. The final action for side-effect tasks should be <code>terminate(success)</code>.</p>
+
+  <h3>5.1 Task Config</h3>
+  <p>The UI header should be driven by a small task config file, not hard-coded in the browser.</p>
+  <pre><code>{
+  "task_name": "SystemBrightnessMin",
+  "goal": "Turn brightness to the min value.",
+  "budget": 10,
+  "optimal_steps": 3,
+  "success_criteria": "System brightness is set to the minimum value.",
+  "verification_hint": "Run adb shell settings get system screen_brightness and expect the minimum value.",
+  "success_checks": [
+    {
+      "label": "Read system brightness",
+      "kind": "adb_shell",
+      "command": "adb shell settings get system screen_brightness",
+      "expected": "minimum value for this emulator image",
+      "safe_to_run": true
+    }
+  ]
+}</code></pre>
+  <p>The UI should render <code>success_criteria</code> as plain text and <code>success_checks</code> as command rows. Command rows should show label, command, expected result, <code>Copy</code>, and optionally <code>Run</code> when <code>safe_to_run: true</code>. Write commands or destructive commands should default to copy-only unless explicitly approved in the tool implementation.</p>
+</div>
+
+<h2 id="thoughts">6. AI Thought Generation</h2>
+<div class="card">
+  <h3>6.1 Principle</h3>
+  <p>The AI should not choose actions. The human trace is the source of truth. The model only writes concise <code>Thought:</code> and <code>Action:</code> text that matches the screenshot and selected action. The builder then appends the deterministic tool call.</p>
+  <p>One curated trajectory can produce multiple SFT samples by varying the natural-language thought/action text and optionally applying tiny coordinate jitter to robust coordinate actions. The original human trace remains the canonical source; generated variants are derived artifacts with explicit provenance.</p>
+
+  <h3>6.2 Input to Qwen3-VL-4B-Instruct</h3>
+  <p>For each step, send:</p>
+  <ul>
+    <li>Current screenshot image.</li>
+    <li>Task goal.</li>
+    <li>Previous recorded actions as short text history.</li>
+    <li>Current selected action object from <code>trace.json</code>.</li>
+    <li>Human note, if present.</li>
+  </ul>
+
+  <h3>6.3 Single-Step Prompt Template</h3>
+  <pre><code>You are helping convert a human Android demonstration into SFT data.
+
+Write ONLY the natural-language Thought and Action fields for the next step.
+Do not choose a different action. Do not change coordinates. Do not mention
+coordinate numbers unless the action is a precise drawing or slider movement.
+
+Rules:
+- Thought: one concise sentence explaining why this immediate action is next.
+- Action: one short imperative sentence describing the UI action.
+- Use only what is visible in the screenshot, the task goal, and the provided action.
+- If the screenshot does not support the provided action, output exactly:
+  NEEDS_REVIEW
+
+Task goal:
+{goal}
+
+Previous actions:
+{history}
+
+Provided action:
+{action_json}
+
+Human note:
+{human_note}
+
+Return JSON:
+{"thought": "...", "action": "..."}</code></pre>
+
+  <h3>6.4 Multi-Sample Prompt Template</h3>
+  <p>For augmentation, request several variants at once. Keep the provided action fixed at this stage; coordinate jitter should be applied by the builder after validation, not invented by the model.</p>
+  <pre><code>You are helping augment a human Android demonstration for SFT.
+
+Generate {num_variants} alternative Thought/Action pairs for the same fixed
+Android action. Do not change the action type, target UI element, text content,
+button, or coordinates. The variants should be semantically equivalent and
+short. Avoid adding facts not visible in the screenshot.
+
+Rules for each variant:
+- Thought: one concise sentence.
+- Action: one short imperative sentence.
+- The action description must match the provided action exactly.
+- Do not mention coordinate numbers.
+- If the screenshot does not support the action, return {"needs_review": true}.
+
+Task goal:
+{goal}
+
+Previous actions:
+{history}
+
+Provided action:
+{action_json}
+
+Human note:
+{human_note}
+
+Return JSON:
+{
+  "variants": [
+    {"thought": "...", "action": "..."},
+    {"thought": "...", "action": "..."}
+  ]
+}</code></pre>
+
+  <h3>6.5 Coordinate Jitter Policy</h3>
+  <p>Coordinate jitter is allowed only as a builder-side augmentation after the canonical trajectory is validated. Do not ask the AI to make up new coordinates.</p>
+  <table>
+    <thead><tr><th>Action</th><th>Allowed Jitter</th><th>Guardrail</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>click</code>, <code>long_press</code></td>
+        <td>Up to ±2 physical pixels in x/y, then recompute Qwen coordinates.</td>
+        <td>Only if the target is a large stable UI element. Do not jitter tiny icons, text cursor placement, canvas drawing, or file-list rows near boundaries.</td>
+      </tr>
+      <tr>
+        <td><code>swipe</code></td>
+        <td>Up to ±2 physical pixels on each endpoint.</td>
+        <td>Only for forgiving gestures like dragging a brightness slider to an endpoint. Do not jitter path-sensitive drawing or map gestures.</td>
+      </tr>
+      <tr>
+        <td><code>type</code>, <code>system_button</code>, <code>wait</code>, <code>terminate</code></td>
+        <td>No coordinate jitter.</td>
+        <td>Only thought/action wording variants are generated.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Recommended initial multiplier: <code>3</code> text variants per step and <code>1</code> jittered coordinate copy for safe coordinate actions. This yields more rows without flooding the dataset with near-duplicates.</p>
+
+  <h3>6.6 Example Output</h3>
+  <pre><code>{
+  "thought": "I need to open the display controls so I can reach the brightness slider.",
+  "action": "Tap Display in the Settings list."
+}</code></pre>
+
+  <h3>6.7 Builder-Assembled Assistant Message</h3>
+  <pre><code>Thought: I need to open the display controls so I can reach the brightness slider.
+Action: Tap Display in the Settings list.
+&lt;tool_call&gt;
+{"name": "mobile_use", "arguments": {"action": "click", "coordinate": [500, 630]}}
+&lt;/tool_call&gt;</code></pre>
+  <div class="callout">
+    Use the remote vLLM-served Qwen3-VL-4B-Instruct for thought generation. For one canonical sample use <code>temperature=0.0</code>. For wording variants use a modest temperature such as <code>0.4</code>, while still rejecting outputs that change the target action.
+  </div>
+
+  <h3>6.8 Offline LLM Post-Processing Script</h3>
+  <p>Thought/action generation should run as an offline post-processing pass, not during live curation. This keeps the curation UI fast and avoids blocking the human on remote model latency.</p>
+  <pre><code>python3 training/data/manual_curation/generate_thoughts.py \
+  --input-root training/data/manual_curation/raw \
+  --output-root training/data/manual_curation/annotated \
+  --vllm-base-url http://REMOTE_HOST:9000/v1 \
+  --model Qwen3-VL-4B-Instruct \
+  --num-variants 3 \
+  --temperature 0.4 \
+  --coordinate-jitter-px 2</code></pre>
+  <p>This iteration supports only <code>SystemBrightnessMin</code>. Other manual tasks are intentionally out of scope until the brightness workflow is proven end to end.</p>
+</div>
+
+<h2 id="builder">7. Training Dataset Builder</h2>
+<div class="card">
+  <h3>7.1 Builder Responsibilities</h3>
+  <ul>
+    <li>Read <code>training/data/manual_curation/raw/*/*/trace.json</code>.</li>
+    <li>Read task metadata: goal, budget, optimal steps, success criteria, and verification evidence.</li>
+    <li>Validate screenshots exist and coordinates are in range.</li>
+    <li>Ensure the final action is <code>terminate(success)</code> for side-effect tasks.</li>
+    <li>Consume offline LLM annotations from <code>training/data/manual_curation/annotated</code>, or fail with a clear message if required thoughts are missing.</li>
+    <li>Optionally expand each canonical step into text variants and safe coordinate-jitter variants.</li>
+    <li>Render assistant messages with Qwen tool-call JSON.</li>
+    <li>Render user messages using the same prompt shape as eval: goal, text history, current screenshot placeholder.</li>
+    <li>Write either an intermediate QwenAgent-style JSONL or a final verl parquet.</li>
+  </ul>
+
+  <h3>7.2 Recommended Two-Stage Output</h3>
+  <table>
+    <thead><tr><th>Stage</th><th>Output</th><th>Reason</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Stage A</td>
+        <td><code>training/data/manual_curation/qwen_jsonl/{task}/repeat_XX_succ.jsonl</code></td>
+        <td>Easy to inspect and compatible with existing validation concepts.</td>
+      </tr>
+      <tr>
+        <td>Stage B</td>
+        <td><code>training/data/sft_manual_failed_v0/train.parquet</code></td>
+        <td>Actual trainer input, with images embedded for remote training.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>7.3 Validation Gates</h3>
+  <ul>
+    <li>Every screenshot opens as PNG.</li>
+    <li>Every click/long-press has exactly one pixel and one Qwen coordinate.</li>
+    <li>Every swipe has two endpoints.</li>
+    <li>Every Qwen coordinate is in <code>[0, 999]</code>.</li>
+    <li>Every assistant message passes <code>training/data/response_validation.py</code>.</li>
+    <li>Per demo: at least one non-terminal action and exactly one final terminal action.</li>
+    <li>Generated variants preserve action type, text payload, button payload, and terminal status.</li>
+    <li>Jittered coordinates stay in bounds and are tagged with <code>augmentation.coordinate_jitter_px</code>.</li>
+  </ul>
+</div>
+
+<h2 id="tasks">8. Current Task</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>Task</th><th>Reason</th><th>Expected Demo Shape</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>SystemBrightnessMin</code></td>
+        <td>Only supported curation target for this iteration. Deterministic, coordinate-heavy, and fast to verify with <code>adb shell settings get system screen_brightness</code>.</td>
+        <td>Open Settings, navigate to brightness/display, drag slider left, verify, terminate.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 id="deliverables">9. Deliverables</h2>
+<div class="card">
+  <ul>
+    <li><code>tools/manual_curation/serve.py</code> — localhost capture server.</li>
+    <li><code>tools/manual_curation/static/index.html</code> — screenshot coordinate picker and action side panel.</li>
+    <li><code>tools/manual_curation/tasks/*.json</code> — task metadata consumed by the UI header and saved into every trace.</li>
+    <li><code>training/data/manual_curation/raw/</code> — raw traces and screenshots; likely gitignored because images are large.</li>
+    <li><code>training/data/manual_curation/annotated/</code> — raw traces plus LLM-generated thought/action variants.</li>
+    <li><code>training/data/manual_curation/generate_thoughts.py</code> — sends screenshot/action requests to the remote vLLM-served Qwen3-VL model and writes annotation variants.</li>
+    <li><code>training/data/build_manual_curation.py</code> — raw trace to Qwen JSONL/parquet builder.</li>
+    <li><code>tasks/training-codebase/data-curation-for-always-failed-task/README.md</code> — operator notes after the workflow stabilizes.</li>
+  </ul>
+</div>
+
+<h2 id="open">10. Decisions and Deferred Questions</h2>
+<div class="card">
+  <h3>10.1 Decisions</h3>
+  <ol>
+    <li><strong>ADB actions:</strong> run-from-UI is accepted for speed. Keep a copied command visible for auditability.</li>
+    <li><strong>Storage root:</strong> use <code>training/data/manual_curation</code>.</li>
+    <li><strong>Builder output:</strong> write QwenAgent-style JSONL first, then parquet. JSONL gives an inspectable intermediate and keeps compatibility with existing validation checks.</li>
+    <li><strong>Thought generation:</strong> offline post-processing pass via <code>generate_thoughts.py</code>.</li>
+  </ol>
+  <h3>10.2 Deferred</h3>
+  <ol>
+    <li><strong>Augmentation multiplier:</strong> start with <code>--num-variants 3</code> and <code>--coordinate-jitter-px 2</code>; tune after inspecting duplicate pressure in the first dataset build.</li>
+    <li><strong>Additional tasks:</strong> deferred. Keep the first pass focused on <code>SystemBrightnessMin</code>.</li>
+  </ol>
+</div>
+
+</div>
+</body>
+</html>

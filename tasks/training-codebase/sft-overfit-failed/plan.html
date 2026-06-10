@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SFT Overfit on Always-Failed Tasks — Plan</title>
+<style>
+  :root {
+    --fg: #1c1f24;
+    --muted: #5c6370;
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --border: #e1e4e8;
+    --accent: #2f6feb;
+    --accent-soft: #dbe7ff;
+    --warn: #b85c00;
+    --warn-soft: #fff3e0;
+    --ok: #1f7a3a;
+    --ok-soft: #e3f6e8;
+    --risk: #b3261e;
+    --risk-soft: #fdecea;
+    --code-bg: #f4f5f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    line-height: 1.55;
+    font-size: 15px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 28px 80px; }
+  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 22px; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 17px; margin: 22px 0 8px; }
+  h4 { font-size: 13px; margin: 16px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  p, ul, ol { margin: 8px 0; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 3px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+  pre {
+    background: #0f1419;
+    color: #d6dae0;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.55;
+    margin: 8px 0;
+  }
+  pre code { background: none; padding: 0; font-size: 12.5px; color: inherit; }
+  .tk-kw { color: #c792ea; }
+  .tk-str { color: #c3e88d; }
+  .tk-num { color: #f78c6c; }
+  .tk-com { color: #5c6370; font-style: italic; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 14px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout.ok { border-left-color: var(--ok); background: var(--ok-soft); }
+  .callout.risk { border-left-color: var(--risk); background: var(--risk-soft); }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13.5px; }
+  th, td { border: 1px solid var(--border); padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f2f5; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 22px;
+    font-size: 14px;
+  }
+  .toc ol { columns: 2; column-gap: 30px; margin: 4px 0; }
+  .pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-right: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    vertical-align: middle;
+  }
+  .pill.todo { background: var(--warn-soft); color: var(--warn); }
+  .pill.done { background: var(--ok-soft); color: var(--ok); }
+  .pill.risk-h { background: var(--risk-soft); color: var(--risk); }
+  .pill.risk-m { background: #fff5d9; color: #8a6800; }
+  .pill.risk-l { background: #eef2f7; color: var(--muted); }
+  .file { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .small { font-size: 13px; color: var(--muted); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+  .svg-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px 12px;
+    margin: 14px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    overflow-x: auto;
+  }
+  .svg-card svg { display: block; max-width: 100%; height: auto; }
+  .caption { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+
+  .step {
+    display: flex; align-items: center; gap: 12px;
+    margin: 28px 0 8px;
+  }
+  .step .num {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent); color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px;
+    flex-shrink: 0;
+  }
+  .step h2 { margin: 0; padding: 0; border: none; flex: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>SFT Overfit on Always-Failed Tasks</h1>
+<div class="meta">
+  Feasibility test: can SFT overfit a tiny set of <em>always-failed</em> AndroidWorld tasks once we manage to scrape any successful demos for them? Mirrors the <a href="../sft-run/plan.html">overfit-10 SFT run</a> in shape but pulls data from a brute-force, high-temperature rollout pass.<br>
+  Parent: <a href="../plan.md">tasks/training-codebase/plan.md</a> · Sibling: <a href="../sft-run/plan.html">sft-run/plan.html</a> · Source: <a href="../../always-failed-trajectory-analysis/conclusion.md">always-failed-trajectory-analysis/</a> · Date: 2026-05-16
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#context">Context &amp; hypothesis</a></li>
+    <li><a href="#tasks">Target tasks</a></li>
+    <li><a href="#flow">End-to-end data flow</a></li>
+    <li><a href="#decisions">Decisions (frozen)</a></li>
+    <li><a href="#deliverables">Deliverables</a></li>
+    <li><a href="#step1">Phase 1 — Pre-flight</a></li>
+    <li><a href="#step2">Phase 2 — Brute-force data collection</a></li>
+    <li><a href="#step2b">Phase 2b — Manual demo generation</a></li>
+    <li><a href="#step3">Phase 3 — Stats checkpoint</a></li>
+    <li><a href="#step4">Phase 4 — SFT training (30 epochs)</a></li>
+    <li><a href="#step5">Phase 5 — Eval round-trip</a></li>
+    <li><a href="#risks">Risks &amp; failure modes</a></li>
+    <li><a href="#verification">Verification checklist</a></li>
+  </ol>
+</div>
+
+<!-- ============ CONTEXT ============ -->
+<h2 id="context">1. Context &amp; hypothesis</h2>
+
+<div class="card">
+<p>The <a href="../sft-run/plan.html">overfit-10 SFT run</a> showed that SFT can drive Qwen3-VL-4B to memorize 10 tasks from UI-Voyager demos when those demos exist. The 32 <a href="../../always-failed-trajectory-analysis/conclusion.md">always-failed tasks</a> are the opposite regime: UI-Voyager pinned at <code>temperature=0.0</code> never passes them, so no demos exist to begin with.</p>
+
+<p><strong>Overarching question.</strong> UI-Voyager was trained on rollouts produced by base Qwen3-VL-4B-Instruct. If the base model never produced successes on certain tasks during data generation, UI-Voyager never saw demos for those tasks &mdash; and so never learned them. The always-failed cohort is precisely the candidate set for this story. If we can <em>generate</em> demos for these tasks (by any means) and SFT them into the model, and the model then performs them, the gap is <strong>data-volume, not capability</strong>. That would localize the bottleneck to the original data-generation pipeline.</p>
+
+<p><strong>Empirical update (Phase 2).</strong> Running base Qwen3-VL-4B-Instruct at <code>T=1.0</code> for 50 rollouts per task yielded a three-way split (see <a href="#step2">§6 Phase 2 results</a>): three tasks with usable success rates, two with zero successes. Same shape was observed under UI-Voyager. The single-lever brute-force hypothesis is falsified for the zero-success bucket.</p>
+
+<p><strong>Updated approach.</strong> Treat the cohort as three buckets, each with its own demo source:</p>
+<ul>
+  <li><b>Auto-collected demos</b> &mdash; three tasks where base-Qwen at <code>T=1.0</code> already produces enough successes.</li>
+  <li><b>Manually generated demos</b> &mdash; three tasks where automated collection fails. Generated via scripted ADB replay or oracle-augmented agent (<a href="#step2b">§7 Phase 2b</a>).</li>
+  <li><b>Skipped</b> &mdash; tasks that fail both routes within the pilot's compute budget; written up as out-of-scope, not blockers.</li>
+</ul>
+
+<p><strong>What this plan is <em>not</em>.</strong> Not a generalization test. Not a benchmark improvement claim. The output is a per-task yes/no: <em>did SFT learn the demos we managed to scrape, by whichever route</em>.</p>
+</div>
+
+<!-- ============ TASKS ============ -->
+<h2 id="tasks">2. Target tasks</h2>
+
+<p>Five tasks targeted for automated brute-force demo collection (Phase 2). Three additional tasks targeted for manual demo generation (Phase 2b). All eight are drawn from the <a href="../../always-failed-trajectory-analysis/conclusion.md">always-failed analysis matrix</a>.</p>
+
+<h3>2.1 Automated brute-force cohort (current config)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Task</th>
+      <th>Goal</th>
+      <th>Optimal</th>
+      <th>Budget</th>
+      <th>Bucket</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><a href="../../always-failed-trajectory-analysis/13-notes-todo-item-count.md"><code>NotesTodoItemCount</code></a></td>
+      <td>How many to-dos do I have in the '{folder}' folder in the Joplin app? Express your answer as just a single number.</td>
+      <td>5</td>
+      <td>10</td>
+      <td><span class="pill done">auto · 86%</span></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><a href="../../always-failed-trajectory-analysis/22-simple-calendar-events-in-next-week.md"><code>SimpleCalendarEventsInNextWeek</code></a></td>
+      <td>What events do I have in the next week in Simple Calendar Pro? Assume the week starts from Monday. Answer with the titles only. If there are multiple titles, format your answer in a comma separated list.</td>
+      <td>3</td>
+      <td>10</td>
+      <td><span class="pill done">auto · 28%</span></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><code>SystemCopyToClipboard</code></td>
+      <td>Copy the given text to the clipboard. (parameterized; see task registry)</td>
+      <td>3</td>
+      <td>10</td>
+      <td><span class="pill done">auto · 16%</span></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><a href="../../always-failed-trajectory-analysis/30-system-brightness-min.md"><code>SystemBrightnessMin</code></a></td>
+      <td>Turn brightness to the min value.</td>
+      <td>3</td>
+      <td>10</td>
+      <td><span class="pill risk-h">auto · 0% &rarr; manual</span></td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><a href="../../always-failed-trajectory-analysis/08-markor-add-note-header.md"><code>MarkorAddNoteHeader</code></a></td>
+      <td>Add a header line at the top of the Markor note '{filename}'.</td>
+      <td>&mdash;</td>
+      <td>10</td>
+      <td><span class="pill risk-h">auto · 0% &rarr; manual</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2.2 Manual generation cohort (Phase 2b)</h3>
+
+<p>Three tasks where the auto-collected success rate is zero or where the failure mode requires human intervention to bootstrap demos. Each gets a hand-authored trajectory generator (see <a href="#step2b">§7 Phase 2b</a>).</p>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Task</th><th>Goal</th><th>Why manual</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><a href="../../always-failed-trajectory-analysis/08-markor-add-note-header.md"><code>MarkorAddNoteHeader</code></a></td>
+      <td>Add a header line at the top of the Markor note '{filename}'.</td>
+      <td>Base-Qwen scored 0/50 at <code>T=1.0</code>. Compound task with parameterized filename: agent rarely opens the right note, never inserts header in the right format.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><a href="../../always-failed-trajectory-analysis/30-system-brightness-min.md"><code>SystemBrightnessMin</code></a></td>
+      <td>Turn brightness to the min value.</td>
+      <td>Base-Qwen scored 0/50 at <code>T=1.0</code>. Visual-grounding failure on the slider; agent declares success without the slider ever reaching min.</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><a href="../../always-failed-trajectory-analysis/04-camera-take-photo.md"><code>CameraTakePhoto</code></a></td>
+      <td>Take one photo.</td>
+      <td>Original target of the hint experiment. Diagnosed: agent grounds Google Photos instead of Camera; even with the Camera-app hint, AVD snapshot has unresolved first-run modals. Manual demo bypasses both.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ FLOW ============ -->
+<h2 id="flow">3. End-to-end data flow</h2>
+
+<p>Same shape as the existing SFT pipeline; the only structural change is the high-temperature gate before SFT data lands on disk.</p>
+
+<div class="svg-card">
+<svg viewBox="0 0 1080 460" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="12">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#5c6370"/>
+    </marker>
+    <linearGradient id="gCfg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#dbe7ff"/><stop offset="1" stop-color="#b8cfff"/>
+    </linearGradient>
+    <linearGradient id="gRoll" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff3e0"/><stop offset="1" stop-color="#ffd9a3"/>
+    </linearGradient>
+    <linearGradient id="gKept" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#e3f6e8"/><stop offset="1" stop-color="#b8e0c2"/>
+    </linearGradient>
+    <linearGradient id="gCkpt" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#f0e6ff"/><stop offset="1" stop-color="#d4bdf2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Config -->
+  <g>
+    <rect x="20" y="20" width="240" height="110" rx="8" fill="url(#gCfg)" stroke="#2f6feb" stroke-width="1.5"/>
+    <text x="140" y="44" text-anchor="middle" font-weight="700" fill="#1c1f24">demos_overfit5_failed.yaml</text>
+    <text x="140" y="64" text-anchor="middle" fill="#1c1f24">5 tasks · n_task_combinations=50</text>
+    <text x="140" y="82" text-anchor="middle" fill="#b85c00" font-weight="700">llm.temperature: 1.0</text>
+    <text x="140" y="100" text-anchor="middle" fill="#5c6370">history_len=30 · use_som=false</text>
+    <text x="140" y="118" text-anchor="middle" fill="#5c6370">sft_data_dir set → captures only</text>
+  </g>
+
+  <!-- Rollouts -->
+  <g>
+    <rect x="340" y="20" width="240" height="110" rx="8" fill="url(#gRoll)" stroke="#b85c00" stroke-width="1.5"/>
+    <text x="460" y="44" text-anchor="middle" font-weight="700" fill="#1c1f24">UI-Voyager rollouts</text>
+    <text x="460" y="64" text-anchor="middle" fill="#1c1f24">5 × 50 = 250 episodes</text>
+    <text x="460" y="82" text-anchor="middle" fill="#5c6370">stochastic at T=1.0</text>
+    <text x="460" y="100" text-anchor="middle" fill="#5c6370">evaluator scores each episode</text>
+    <text x="460" y="118" text-anchor="middle" fill="#5c6370">pass / fail per JSONL</text>
+  </g>
+
+  <!-- Filter -->
+  <g>
+    <rect x="660" y="20" width="240" height="110" rx="8" fill="url(#gKept)" stroke="#1f7a3a" stroke-width="1.5"/>
+    <text x="780" y="44" text-anchor="middle" font-weight="700" fill="#1c1f24">Successful rollouts</text>
+    <text x="780" y="64" text-anchor="middle" fill="#1c1f24">N successes ≪ 100</text>
+    <text x="780" y="82" text-anchor="middle" fill="#5c6370">written to sft_data_dir</text>
+    <text x="780" y="100" text-anchor="middle" fill="#5c6370">(gate verified in pre-flight)</text>
+    <text x="780" y="118" text-anchor="middle" fill="#5c6370">→ stats checkpoint</text>
+  </g>
+
+  <!-- Dataset build -->
+  <g>
+    <rect x="60" y="180" width="280" height="80" rx="8" fill="white" stroke="#5c6370" stroke-width="1.2"/>
+    <text x="200" y="202" text-anchor="middle" font-weight="700">Reuse sft-data converter</text>
+    <text x="200" y="220" text-anchor="middle" fill="#5c6370">JSONL → train.parquet</text>
+    <text x="200" y="238" text-anchor="middle" fill="#5c6370">same schema as overfit-10</text>
+    <text x="200" y="256" text-anchor="middle" fill="#5c6370">≪ 2250 rows</text>
+  </g>
+
+  <!-- SFT training -->
+  <g>
+    <rect x="400" y="180" width="280" height="80" rx="8" fill="url(#gKept)" stroke="#1f7a3a" stroke-width="1.5"/>
+    <text x="540" y="202" text-anchor="middle" font-weight="700">verl SFT trainer</text>
+    <text x="540" y="220" text-anchor="middle" fill="#1c1f24" font-size="12">FSDP2 · bf16 · 30 epochs</text>
+    <text x="540" y="238" text-anchor="middle" fill="#5c6370">recipe copied from sft-run</text>
+    <text x="540" y="256" text-anchor="middle" fill="#5c6370">same LR · same batch</text>
+  </g>
+
+  <!-- Checkpoint -->
+  <g>
+    <rect x="740" y="180" width="280" height="80" rx="8" fill="url(#gCkpt)" stroke="#5e3b9c" stroke-width="1.5"/>
+    <text x="880" y="202" text-anchor="middle" font-weight="700">$CKPT_HOME/global_step_*</text>
+    <text x="880" y="220" text-anchor="middle" fill="#1c1f24" font-size="12">HF format → vLLM</text>
+    <text x="880" y="238" text-anchor="middle" fill="#5c6370">rsync'd back to local</text>
+    <text x="880" y="256" text-anchor="middle" fill="#5c6370">served on port 9000</text>
+  </g>
+
+  <!-- Eval -->
+  <g>
+    <rect x="290" y="320" width="500" height="80" rx="8" fill="url(#gCfg)" stroke="#2f6feb" stroke-width="1.5"/>
+    <text x="540" y="344" text-anchor="middle" font-weight="700">eval_overfit5_failed_sft.yaml</text>
+    <text x="540" y="362" text-anchor="middle" fill="#1c1f24" font-size="12">same 5 tasks · n_task_combinations=1 · T=0.0</text>
+    <text x="540" y="380" text-anchor="middle" fill="#5c6370">baseline (UI-Voyager) vs SFT pass-rate</text>
+    <text x="540" y="396" text-anchor="middle" fill="#5c6370">per-task pass/fail is the headline metric</text>
+  </g>
+
+  <!-- arrows -->
+  <line x1="260" y1="75" x2="335" y2="75" stroke="#5c6370" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="580" y1="75" x2="655" y2="75" stroke="#5c6370" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="780" y1="135" x2="200" y2="175" stroke="#5c6370" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="340" y1="220" x2="395" y2="220" stroke="#5c6370" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="680" y1="220" x2="735" y2="220" stroke="#5c6370" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="880" y1="265" x2="600" y2="315" stroke="#5c6370" stroke-width="1.5" marker-end="url(#arr)"/>
+</svg>
+<div class="caption">High-temperature data collection feeds the same SFT → eval pipeline used for overfit-10.</div>
+</div>
+
+<!-- ============ DECISIONS ============ -->
+<h2 id="decisions">4. Decisions (frozen)</h2>
+
+<table>
+  <thead><tr><th>Knob</th><th>Value</th><th>Rationale</th></tr></thead>
+  <tbody>
+    <tr><td>Demonstrator</td><td>UI-Voyager (vLLM, port 9000)</td><td>Same model used for overfit-10. Hand-written demos rejected for cost.</td></tr>
+    <tr><td>Number of tasks</td><td>5</td><td>Pilot scope. Smoke-test the feasibility question before scaling.</td></tr>
+    <tr><td>Task selection</td><td>User-picked (see <a href="#tasks">§2</a>)</td><td>3 premature-success bias + 1 app-not-found + 1 compound — diagnostic spread.</td></tr>
+    <tr><td>Rollouts per task</td><td>50</td><td>= <code>n_task_combinations</code>. 250 episodes total. Higher than the initial 20/task because expected success rate is low; need more shots to land any pass on the hardest picks.</td></tr>
+    <tr><td><strong>llm.temperature</strong></td><td><strong>1.0</strong></td><td>Brute-force lever. Current overfit-10 config pins 0.0 → no variance → guaranteed repeat failures.</td></tr>
+    <tr><td>llm.top_p</td><td>1.0</td><td>Leave to temperature; avoid stacking samplers.</td></tr>
+    <tr><td>Step budget</td><td>2× optimal (unchanged)</td><td>Keep parity with overfit-10. Budget isn't the lever here.</td></tr>
+    <tr><td>SFT epochs</td><td>30 (vs 60 in overfit-10)</td><td>Demo set will be much smaller; halve epochs to avoid pathological overfit.</td></tr>
+    <tr><td>Other SFT hparams</td><td>Mirror overfit-10</td><td>LR, batch size, FSDP/SP, optimizer all identical so any outcome diff is attributable to data.</td></tr>
+    <tr><td>Eval temperature</td><td>0.0</td><td>Deterministic eval, like all prior runs.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============ DELIVERABLES ============ -->
+<h2 id="deliverables">5. Deliverables</h2>
+
+<ul>
+  <li><span class="file"><a href="../../../MARS-Voyager/androidworld/eval/configs/">MARS-Voyager/androidworld/eval/configs/demos_overfit5_failed.yaml</a></span> — data-collection config (T=1.0).</li>
+  <li><span class="file"><a href="../../../MARS-Voyager/androidworld/eval/configs/">MARS-Voyager/androidworld/eval/configs/eval_overfit5_failed_base.yaml</a></span> — pre-SFT baseline eval (base Qwen3-VL-4B-Instruct, T=0.0).</li>
+  <li><span class="file"><a href="../../../MARS-Voyager/androidworld/eval/configs/">MARS-Voyager/androidworld/eval/configs/eval_overfit5_failed_sft.yaml</a></span> — eval against the new SFT checkpoint.</li>
+  <li><span class="file">tasks/training-codebase/sft-overfit-failed/pilot-stats.md</span> — per-task success counts after Phase 2. Gates Phase 4.</li>
+  <li>One SFT run on the remote training node, logged to W&amp;B, checkpoint rsync'd back.</li>
+  <li><span class="file">tasks/training-codebase/sft-overfit-failed/results.md</span> — final pass-rate table: baseline vs SFT, per task.</li>
+</ul>
+
+<!-- ============ PHASE 1 ============ -->
+<div class="step"><div class="num">1</div><h2 id="step1">Phase 1 — Pre-flight <span class="pill todo">todo</span></h2></div>
+
+<div class="card">
+<p>Two checks before any rollouts run. Neither is optional.</p>
+
+<h3>1.1 Verify <code>sft_data_dir</code> captures successes only</h3>
+<p>The pipeline assumption is that <code>Qwen3VLAgent</code> + <code>EvalRunner</code> write rollouts to <code>sft_data_dir</code> <em>only</em> after the task evaluator returns pass. If this gate doesn't exist, every brute-force episode would poison the training set with failures.</p>
+<p>Read:</p>
+<ul>
+  <li><a href="../../../MARS-Voyager/androidworld/eval/agents/qwen_agent.py"><code>MARS-Voyager/androidworld/eval/agents/qwen_agent.py</code></a> — locate the SFT write path.</li>
+  <li><a href="../../../MARS-Voyager/androidworld/eval/runner.py"><code>MARS-Voyager/androidworld/eval/runner.py</code></a> — locate the evaluator call and the success-conditional write.</li>
+</ul>
+<div class="callout risk">
+If success-gating is absent, add it before Phase 2. Do not run brute-force first.
+</div>
+
+<h3>1.2 Confirm sampling varies at T=1.0</h3>
+<p>Pin one task, run two episodes at <code>temperature=1.0</code> with the same seed. If the assistant outputs are byte-identical (vLLM caching, ignored sampling, etc.), the brute-force lever doesn't actually do anything. Diff the two JSONLs by hand on the first 5 steps.</p>
+
+<pre><code><span class="tk-com"># quick lever check</span>
+NUM_WORKERS=1 CONFIG_NAME=demos_overfit5_failed MODEL_NAME=UI-Voyager \
+  ./run_android_world_local.sh  <span class="tk-com"># after editing tasks to one task, n_task_combinations=2</span>
+diff -u eval_results/UI-Voyager/.../*_0.jsonl eval_results/UI-Voyager/.../*_1.jsonl | head -50
+</code></pre>
+</div>
+
+<!-- ============ PHASE 2 ============ -->
+<div class="step"><div class="num">2</div><h2 id="step2">Phase 2 — Brute-force data collection <span class="pill todo">todo</span></h2></div>
+
+<div class="card">
+<p>Author the data-collection config and run the full 100-episode sweep.</p>
+
+<h3>2.1 Config</h3>
+<p>Copy <a href="../../../MARS-Voyager/androidworld/eval/configs/demos_overfit10.yaml"><code>demos_overfit10.yaml</code></a> to <code>demos_overfit5_failed.yaml</code>. Apply exactly these diffs:</p>
+
+<pre><code><span class="tk-kw">llm</span>:
+  <span class="tk-kw">temperature</span>: <span class="tk-num">1.0</span>     <span class="tk-com"># was 0.0 — the brute-force lever (see §1 hypothesis)</span>
+
+<span class="tk-kw">eval</span>:
+  <span class="tk-kw">tasks</span>:
+    - <span class="tk-str">CameraTakePhoto</span>
+    - <span class="tk-str">CameraTakeVideo</span>
+    - <span class="tk-str">NotesTodoItemCount</span>
+    - <span class="tk-str">SimpleCalendarEventsInNextWeek</span>
+    - <span class="tk-str">SystemBrightnessMin</span>
+  <span class="tk-kw">n_task_combinations</span>: <span class="tk-num">50</span>   <span class="tk-com"># was 30; 5×50=250 total episodes (low expected success rate → more shots)</span>
+  <span class="tk-kw">task_random_seed</span>: <span class="tk-num">42</span>      <span class="tk-com"># unchanged; LLM variance comes from temperature</span>
+</code></pre>
+
+<p class="small">Everything else (env, agent, <code>llm.model: UI-Voyager</code>, <code>base_url</code>, <code>max_tokens</code>, <code>top_p</code>, <code>history_len</code>, <code>sft_data_dir</code>) stays identical to <code>demos_overfit10.yaml</code>.</p>
+
+<h3>2.2 Launch</h3>
+<pre><code>NUM_WORKERS=4 CONFIG_NAME=demos_overfit5_failed MODEL_NAME=UI-Voyager \
+  ./run_android_world_local.sh</code></pre>
+<p class="small">~250 episodes ÷ 4 workers · &lt;20 steps each + 2s wait → ballpark ~half an emulator-day. Watch the log; expect &lt;20% pass rate even on the easier picks.</p>
+
+<h3>2.3 Output paths</h3>
+<ul>
+  <li>Rollouts: <code>eval_results/UI-Voyager/results/demos_overfit5_failed/sft_rollouts/</code> (success-gated by Phase 1.1).</li>
+  <li>Per-task metrics: <code>eval_results/UI-Voyager/logs/demos_overfit5_failed/parallel_summary_repeat_0.json</code>.</li>
+</ul>
+
+<h3>2.4 Observed results (base Qwen3-VL-4B-Instruct, T=1.0, 50 rollouts/task)</h3>
+
+<table>
+  <thead>
+    <tr><th>Task</th><th>Successes / 50</th><th>Pass rate</th><th>Bucket</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>NotesTodoItemCount</code></td><td>43</td><td>86%</td><td><span class="pill done">SFT-ready</span></td></tr>
+    <tr><td><code>SimpleCalendarEventsInNextWeek</code></td><td>14</td><td>28%</td><td><span class="pill done">SFT-ready</span></td></tr>
+    <tr><td><code>SystemCopyToClipboard</code></td><td>8</td><td>16%</td><td><span class="pill done">SFT-ready</span></td></tr>
+    <tr><td><code>SystemBrightnessMin</code></td><td>0</td><td>0%</td><td><span class="pill risk-h">manual needed</span></td></tr>
+    <tr><td><code>MarkorAddNoteHeader</code></td><td>0</td><td>0%</td><td><span class="pill risk-h">manual needed</span></td></tr>
+  </tbody>
+</table>
+
+<p class="small">UI-Voyager run at <code>T=1.0</code> produced the same shape: same zero-success tasks remained zero. Confirms the demonstrator-swap lever is exhausted; remaining gap is on the demo-generation side.</p>
+</div>
+
+<!-- ============ PHASE 2b ============ -->
+<div class="step"><div class="num">2b</div><h2 id="step2b">Phase 2b — Manual demo generation <span class="pill todo">todo</span></h2></div>
+
+<div class="card">
+<p>Three tasks &mdash; <code>MarkorAddNoteHeader</code>, <code>SystemBrightnessMin</code>, <code>CameraTakePhoto</code> &mdash; do not yield demos via automated brute-force. Bootstrap demos manually so SFT has training data for them.</p>
+
+<h3>2b.1 Generation strategies</h3>
+
+<table>
+  <thead><tr><th>Route</th><th>What it is</th><th>Cost</th><th>Recommended for</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>A. Scripted ADB replay</b></td>
+      <td>Python script per task. Issues <code>adb shell input tap/swipe/keyevent</code> in a fixed sequence; captures a screenshot with <code>adb exec-out screencap</code> between actions; assembles a JSONL in Qwen3VL-Agent format with templated reasoning text per step.</td>
+      <td>~30 min/task to author. 100% reproducible afterwards.</td>
+      <td>Tasks with deterministic UI: <code>SystemBrightnessMin</code> (slider drag), <code>CameraTakePhoto</code> (tap shutter).</td>
+    </tr>
+    <tr>
+      <td><b>B. Oracle-augmented agent</b></td>
+      <td>Extend <code>task_hints</code> to a per-step list. Each step appends its step-specific hint to the goal. The agent still chooses the action; the hint constrains it.</td>
+      <td>~1 day to extend the hint plumbing + author per-step hints.</td>
+      <td>Tasks with parameterized state: <code>MarkorAddNoteHeader</code> (per-instance filename).</td>
+    </tr>
+    <tr>
+      <td><b>C. Record human input</b></td>
+      <td><code>adb shell getevent</code> in a background process; human drives the emulator with mouse/keyboard; post-process raw events to (timestamp, action) pairs.</td>
+      <td>Tooling-heavy. Skipped for now.</td>
+      <td>&mdash;</td>
+    </tr>
+    <tr>
+      <td><b>D. Hand-write JSONL</b></td>
+      <td>Pull screenshots from a one-off run; hand-write the prompt and response (in Qwen3VL's action grammar) for each step; concatenate into JSONL.</td>
+      <td>~1 hour/task. No tooling.</td>
+      <td>Last-resort safety net.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2b.2 Per-task plan</h3>
+
+<table>
+  <thead><tr><th>Task</th><th>Primary route</th><th>Fallback</th><th>Action sketch</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>SystemBrightnessMin</code></td>
+      <td>A (scripted ADB)</td>
+      <td>D</td>
+      <td>Open Settings → Display → Brightness slider; <code>input swipe</code> from the right edge to the left edge of the slider rect; verify <code>adb shell settings get system screen_brightness == 1</code>; <code>terminate(success)</code>. Slider coords are constant across instances.</td>
+    </tr>
+    <tr>
+      <td><code>CameraTakePhoto</code></td>
+      <td>A (scripted ADB)</td>
+      <td>D</td>
+      <td>Pre-requisite: fix AVD snapshot first (dismiss "Entering camera mode" modal + disable pointer-location overlay, see ongoing debugging notes). Then: launch Camera intent with <code>am start -a android.media.action.IMAGE_CAPTURE</code>; tap shutter at known coords; verify MediaStore; <code>terminate(success)</code>.</td>
+    </tr>
+    <tr>
+      <td><code>MarkorAddNoteHeader</code></td>
+      <td>B (oracle-augmented agent)</td>
+      <td>A with per-instance filename resolution</td>
+      <td>Per-step hints: (1) "Open the Markor app from the launcher." (2) "Tap the file named '{filename}' shown in the file list." (3) "Tap the edit pencil to enter edit mode." (4) "Move the cursor to the top of the document and type '# ' followed by the desired header." (5) "Save and exit." Filename comes from <code>task.params</code> at episode start.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2b.3 JSONL format requirements</h3>
+
+<p>Generated demos must match the schema written by <a href="../../../MARS-Voyager/androidworld/eval/agents/qwen_agent.py"><code>QwenAgent._save_sft_data</code></a> so the existing sft-data converter can ingest them:</p>
+
+<ul>
+  <li>One file per (task, instance): <code>{sft_data_dir}/{task_name}/repeat_{repeat:02d}_inst_{inst:03d}_succ.jsonl</code>.</li>
+  <li>One JSON object per step, each with fields: <code>goal</code>, <code>task_name</code>, <code>text_prompt</code>, <code>response</code>, <code>image</code> (PNG bytes base64-encoded or path), <code>is_success: true</code>.</li>
+  <li><code>response</code> follows the Qwen3VL action grammar: <code>{"action": "click", "coordinate": [x, y]}</code>, <code>{"action": "type", "text": "..."}</code>, <code>{"action": "terminate", "status": "success"}</code>, etc.</li>
+  <li>Step screenshots must be captured at the same resolution the runtime agent sees (no resize).</li>
+</ul>
+
+<p>Recommended scaffolding: add <code>MARS-Voyager/scripts/manual_demo_gen/</code> with one Python file per task and a shared <code>_jsonl_writer.py</code> module that handles screenshot capture, prompt construction (re-using <code>QwenAgent._construct_prompt</code>), and JSONL serialization.</p>
+
+<h3>2b.4 Target volume</h3>
+
+<p>10 successful demos per task &times; 3 tasks = 30 manual demos. Small enough to author in a day; large enough that overfit-style SFT has something to memorize per task.</p>
+
+<div class="callout warn">
+After each manual demo is generated, replay it through the eval pipeline to confirm the JSONL parses correctly and the recorded actions reproduce the success when fed to the runtime. A demo the converter accepts but that doesn't replay is silently broken.
+</div>
+</div>
+
+<!-- ============ PHASE 3 ============ -->
+<div class="step"><div class="num">3</div><h2 id="step3">Phase 3 — Stats checkpoint <span class="pill todo">todo</span></h2></div>
+
+<div class="card">
+<p>Before any training, tabulate what brute-force gave us. <strong>This is a decision gate, not a step to power through.</strong></p>
+
+<p>Write <code>sft-overfit-failed/pilot-stats.md</code> with one row per task:</p>
+
+<table>
+  <thead><tr><th>Task</th><th>Rollouts</th><th>Successes</th><th>Demos kept</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td colspan="5"><b>Auto cohort (Phase 2, base Qwen3-VL-4B-Instruct, T=1.0)</b></td></tr>
+    <tr><td>NotesTodoItemCount</td><td>50</td><td>43</td><td>43</td><td>SFT-ready</td></tr>
+    <tr><td>SimpleCalendarEventsInNextWeek</td><td>50</td><td>14</td><td>14</td><td>SFT-ready</td></tr>
+    <tr><td>SystemCopyToClipboard</td><td>50</td><td>8</td><td>8</td><td>SFT-ready</td></tr>
+    <tr><td>SystemBrightnessMin</td><td>50</td><td>0</td><td>0</td><td>→ manual (Phase 2b)</td></tr>
+    <tr><td>MarkorAddNoteHeader</td><td>50</td><td>0</td><td>0</td><td>→ manual (Phase 2b)</td></tr>
+    <tr><td colspan="5"><b>Manual cohort (Phase 2b)</b></td></tr>
+    <tr><td>SystemBrightnessMin</td><td>10</td><td>?</td><td>?</td><td>scripted ADB</td></tr>
+    <tr><td>CameraTakePhoto</td><td>10</td><td>?</td><td>?</td><td>scripted ADB (after AVD fix)</td></tr>
+    <tr><td>MarkorAddNoteHeader</td><td>10</td><td>?</td><td>?</td><td>oracle-augmented agent</td></tr>
+  </tbody>
+</table>
+
+<p>Pre-defined branches per task:</p>
+<ul>
+  <li><strong>Auto cohort with ≥5 successes</strong> → proceed to Phase 4 with those demos.</li>
+  <li><strong>Auto cohort with 1-4 successes</strong> → small demo set; either accept thin coverage or top up with Phase 2b. Decide per task.</li>
+  <li><strong>Auto cohort with 0 successes</strong> → route to Phase 2b manual generation.</li>
+  <li><strong>Phase 2b cohort with 0 successes</strong> after route A or B → fall back to route D (hand-written JSONL) or drop the task and write up as out-of-scope.</li>
+</ul>
+
+<p>Goal at this checkpoint is to have a labeled, per-task SFT dataset where every task carries ≥5 successful trajectories &mdash; from any combination of auto and manual sources &mdash; before launching the training run.</p>
+</div>
+
+<!-- ============ PHASE 4 ============ -->
+<div class="step"><div class="num">4</div><h2 id="step4">Phase 4 — SFT training (30 epochs) <span class="pill todo">todo</span></h2></div>
+
+<div class="card">
+<p>Reuse the <a href="../sft-run/plan.html">sft-run</a> pipeline verbatim. Only deltas vs overfit-10:</p>
+
+<ul>
+  <li>Input dataset: parquet built from the <b>union</b> of (a) <code>sft_rollouts/</code> of the Phase 2 brute-force run and (b) <code>sft_rollouts/</code> of the Phase 2b manual generators. Same JSONL schema; the sft-data converter doesn't care about source.</li>
+  <li>Per-task demo budget: keep up to ~20 demos per task to avoid task-imbalance (NotesTodoItemCount has 43, others have far fewer). Subsample if necessary.</li>
+  <li>Epochs: 30 (was 60). Demo count is much smaller; 60 epochs would memorize noise.</li>
+  <li>W&amp;B run name: <code>sft_overfit_failed_v0.1</code>.</li>
+  <li>Checkpoint output: <code>$CKPT_HOME/sft_overfit_failed/global_step_*</code> → rsync to local.</li>
+</ul>
+
+<div class="callout">
+Everything else — LR, batch, FSDP shape, optimizer, collator, eval_overfit10.yaml-style serving — copies from <a href="../sft-run/plan.html">sft-run</a>. Do not retune.
+</div>
+</div>
+
+<!-- ============ PHASE 5 ============ -->
+<div class="step"><div class="num">5</div><h2 id="step5">Phase 5 — Eval round-trip <span class="pill todo">todo</span></h2></div>
+
+<div class="card">
+<p>Two eval configs, both with the same task list at <code>n_task_combinations=3</code>, <code>temperature=0.0</code>, <code>task_random_seed=42</code> (mirrors the <a href="../sft-run/plan.html">overfit-10</a> eval protocol — matched seeds so base/SFT scores are directly comparable):</p>
+<ul>
+  <li><code>eval_overfit5_failed_base.yaml</code> — points at base <code>Qwen3-VL-4B-Instruct</code>. Already partially measured in Phase 2 (the brute-force numbers approximate base behavior at <code>T=0</code> with multi-seed parameter draws); rerun at <code>T=0</code>, <code>n_task_combinations=3</code> for the canonical baseline.</li>
+  <li><code>eval_overfit5_failed_sft.yaml</code> — points at the new SFT checkpoint served by local vLLM. Run after rsync completes.</li>
+</ul>
+
+<p>Write results to <code>sft-overfit-failed/results.md</code>:</p>
+<table>
+  <thead><tr><th>Task</th><th>Base Qwen3-VL-4B (T=0)</th><th>SFT (this run)</th><th>Demo source</th><th>Demos used</th></tr></thead>
+  <tbody>
+    <tr><td>NotesTodoItemCount</td><td>?</td><td>?</td><td>auto</td><td>?</td></tr>
+    <tr><td>SimpleCalendarEventsInNextWeek</td><td>?</td><td>?</td><td>auto</td><td>?</td></tr>
+    <tr><td>SystemCopyToClipboard</td><td>?</td><td>?</td><td>auto</td><td>?</td></tr>
+    <tr><td>SystemBrightnessMin</td><td>?</td><td>?</td><td>manual (ADB)</td><td>?</td></tr>
+    <tr><td>CameraTakePhoto</td><td>?</td><td>?</td><td>manual (ADB)</td><td>?</td></tr>
+    <tr><td>MarkorAddNoteHeader</td><td>?</td><td>?</td><td>manual (oracle)</td><td>?</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Headline questions, per bucket:</strong></p>
+<ul>
+  <li><b>Auto bucket</b> — did SFT lift pass-rate on the three tasks that already had base-model successes? If yes, the gap is plausibly data-volume: the original training pipeline under-sampled these tasks.</li>
+  <li><b>Manual bucket</b> — did SFT teach the three zero-success tasks at all from a handful of demos? If yes, the gap is also data-only (base model can learn them when shown how). If no, capability bottleneck for those specific tasks.</li>
+</ul>
+</div>
+
+<!-- ============ RISKS ============ -->
+<h2 id="risks">6. Risks &amp; failure modes</h2>
+
+<table>
+  <thead><tr><th>Risk</th><th>Likelihood</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>sft_data_dir</code> writes both passes and fails</td>
+      <td><span class="pill risk-h">high</span></td>
+      <td>Phase 1.1 reads the code and verifies the gate. If absent, fix before Phase 2.</td>
+    </tr>
+    <tr>
+      <td>Brute-force yields 0 successes for some tasks</td>
+      <td><span class="pill risk-h">high</span></td>
+      <td>Phase 3 gate. Contingency: temperature sweep, then drop or abort.</td>
+    </tr>
+    <tr>
+      <td>vLLM ignores temperature (caching / config)</td>
+      <td><span class="pill risk-m">med</span></td>
+      <td>Phase 1.2 diff check. If outputs are identical at T=1.0, fix the server before continuing.</td>
+    </tr>
+    <tr>
+      <td>Tiny SFT set diverges or doesn't converge</td>
+      <td><span class="pill risk-m">med</span></td>
+      <td>Watch W&amp;B loss. If unstable, drop epochs further or lower LR. Don't add data — that defeats the experiment.</td>
+    </tr>
+    <tr>
+      <td>Base Qwen3-VL-4B-Instruct unexpectedly passes some of the 5 tasks</td>
+      <td><span class="pill risk-l">low</span></td>
+      <td>If base passes, the always-failed framing for that task is moot (base is weaker than UI-Voyager, which already failed). Note it and proceed; the SFT improvement is still measurable as Δ over base.</td>
+    </tr>
+    <tr>
+      <td>Temperature 1.0 produces malformed actions that crash the runner</td>
+      <td><span class="pill risk-l">low</span></td>
+      <td>Existing parser already handles parse failures as no-op steps; episode just fails. Monitor logs for unusual crash rates.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ VERIFICATION ============ -->
+<h2 id="verification">7. Verification checklist</h2>
+
+<div class="card">
+<ol>
+  <li>Pre-flight 1.1: success-gate confirmed in <a href="../../../MARS-Voyager/androidworld/eval/runner.py"><code>runner.py</code></a>.</li>
+  <li>Pre-flight 1.2: two T=1.0 episodes diff in their first 5 assistant turns.</li>
+  <li><code>demos_overfit5_failed.yaml</code> commits exactly the diff in §2.1 (no other knobs touched).</li>
+  <li>250 episodes finish; <code>detailed_results.csv</code> has 250 rows across the 5 tasks.</li>
+  <li><code>pilot-stats.md</code> filled in and reviewed before launching training.</li>
+  <li>Training launches against the parquet built from <code>sft_rollouts/</code> only (not mixed with overfit-10 data).</li>
+  <li>Final checkpoint loads under local vLLM at port 9000.</li>
+  <li><code>eval_overfit5_failed_base.yaml</code> run; base score recorded per task.</li>
+  <li><code>results.md</code> records SFT pass-rate per task next to baseline.</li>
+</ol>
+</div>
+
+</div>
+</body>
+</html>

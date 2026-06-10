@@ -77,8 +77,9 @@ path = snapshot_download(repo_id=HF_MODEL_ID, revision=HF_REVISION)
 print("model cached at:", path)
 PY
 
-# 8. Smoke-test the parquet through verl's collator (only if it's been pushed).
-PARQUET=training/data/sft_v0/train.parquet
+# 8. Smoke-test the parquet through verl's collator once the dataset has been
+#    synced to this machine. Override PARQUET for another dataset version.
+PARQUET=${PARQUET:-training/data/sft_overfit_failed_v0.1/train.parquet}
 if [[ -f "$PARQUET" ]]; then
     python - <<PY
 import sys, importlib.util
@@ -89,8 +90,8 @@ ok = mod.smoke_test(Path("$PARQUET"))
 sys.exit(0 if ok else 1)
 PY
 else
-    echo "[setup] $PARQUET missing — push the dataset first, then run:"
-    echo "        python -c \"import sys, importlib.util as u; m=u.module_from_spec(s:=u.spec_from_file_location('b','training/data/build_sft_v0.py')); sys.modules[s.name]=m; s.loader.exec_module(m); from pathlib import Path; assert m.smoke_test(Path('training/data/sft_v0/train.parquet'))\""
+    echo "[setup] $PARQUET missing — sync the dataset first, then run:"
+    echo "        PARQUET=$PARQUET bash training/setup_remote_env.sh"
 fi
 
 echo "[setup] DONE — env at '$ENV_PREFIX' ready."

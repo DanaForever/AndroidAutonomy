@@ -1,0 +1,47 @@
+# Android World Evaluation Config - SystemBrightnessMin SFT checkpoint step 70
+#
+# Serve with:
+#   vllm serve <global_step_70>/actor/huggingface \
+#     --served-model-name sft_uivoyager_brightness_step70 \
+#     --host 0.0.0.0 --port 9000
+
+env:
+  console_port: 5556
+  grpc_port: 8554
+  adb_path: ~/Android/Sdk/platform-tools/adb
+  emulator_path: ~/Android/Sdk/emulator/emulator
+  avd_name: AndroidWorldAvd
+  android_sdk_root: ~/Android/Sdk/
+  android_avd_home: ~/.android/avd/
+
+llm:
+  type: openai
+  base_url: http://localhost:9000
+  model: sft_uivoyager_brightness_step70
+  temperature: 1.0
+  max_tokens: 16384
+  top_p: 1
+  max_retry: 3
+  retry_delay: 1.0
+
+agent:
+  type: local
+  name: Qwen3VL-Agent
+  model_name: qwen3vl
+  prompt_name: qwen3vl_instruct
+  wait_after_action_seconds: 2
+  use_som: false
+  resize: null
+  history_len: 30
+  sft_data_dir: ./sft_data
+  n_history_image: 0
+  print_thought_action: true
+
+eval:
+  suite_family: android_world
+  tasks:
+    - SystemBrightnessMin
+  n_task_combinations: 50
+  task_random_seed: 42
+  checkpoint_dir: ""
+  output_path: ~/android_world/runs

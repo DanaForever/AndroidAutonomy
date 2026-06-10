@@ -246,6 +246,8 @@
     <li><a href="#step6">Step 6 — Eval round-trip (local)</a></li>
     <li><a href="#risks">Risks &amp; failure modes</a></li>
     <li><a href="#verification">Verification checklist</a></li>
+    <li><a href="#runai">Porting to runai / H100</a></li>
+    <li><a href="#todo">TODO / follow-ups</a></li>
   </ol>
 </div>
 
@@ -492,8 +494,8 @@
 <tr><td>Precision</td><td>bf16</td><td>verl default for FSDP2 + Qwen3-VL. fp16 risks NaN on the vision tower. A100 supports bf16 natively.</td></tr>
 <tr>
   <td>Activation checkpointing</td>
-  <td><code>engine.activation_checkpointing=true</code></td>
-  <td><strong>Required on 40 GB.</strong> Trades ~30% throughput for cutting activation memory roughly in half. Without it, OOM is near-certain at any useful sequence length.</td>
+  <td><code>model.enable_gradient_checkpointing=true</code></td>
+  <td><strong>Required on 40 GB.</strong> Trades ~30% throughput for cutting activation memory roughly in half. Already the default in verl's <a href="../../../training/verl/verl/trainer/config/model/hf_model.yaml"><code>hf_model.yaml</code></a>; we set it explicitly so it survives any base-config drift.</td>
 </tr>
 <tr><td>Batch / max length</td><td><code>train_batch_size=32</code>, <code>max_length=4096</code></td><td>Halved from the 64 I'd planned for 80 GB. With dynamic batching, the global batch is what matters for the LR — 32 over ~210 steps is fine.</td></tr>
 <tr><td>Dynamic batching</td><td><code>use_dynamic_bsz=True</code>, <code>max_token_len_per_gpu=16384</code></td><td>Halved from 32k for 80 GB cards. Variable image-token counts → static batches waste compute and OOM unpredictably.</td></tr>
@@ -609,13 +611,21 @@ bash training/scripts/run_sft.sh</code></pre>
   <strong>Operational notes.</strong> The tunnel must stay up for the full training run — if your laptop sleeps mid-run, wandb just queues locally and resumes when reconnected, but a long disconnect can drop the run. Add <code>-o ServerAliveInterval=60</code> to the ssh command to prevent idle disconnects, and consider running the tunnel under <code>autossh</code> or a <code>tmux</code> session on local. If the tunnel is down at training start, the script's <code>WANDB_MODE</code> probe falls back to <code>offline</code> automatically — you can rsync the offline run dir back later and <code>wandb sync</code> it.
 </div>
 
+<div class="callout warn">
+  <strong>Confirmed on this cluster (2026-05-10):</strong> the corporate proxy <code>proxytc.vingroup.net:9090</code> actively blocks <code>api.wandb.ai</code> with <code>403 VG-Blockpage</code> on the HTTPS CONNECT. So:
+  <ul>
+    <li><strong>Online without a tunnel: not possible.</strong> Setting <code>HTTPS_PROXY=http://proxytc...</code> still hits the blockpage on POST/CONNECT.</li>
+    <li><strong>SOCKS Recipe A is the only online path.</strong> The reverse SOCKS tunnel routes wandb traffic out via your laptop's network, bypassing the corporate proxy entirely. Use <code>socks5h://localhost:1080</code> (note the <code>h</code> — DNS through tunnel) so wandb's hostname is resolved locally too.</li>
+    <li><strong>For dry runs: just use offline.</strong> 5 min of training isn't worth tunnel-debugging time. Set <code>WANDB_MODE=offline</code>, ship the run, sync from local later. The launch script's auto-probe does this for you when reachability fails.</li>
+  </ul>
+</div>
+
 <!-- ============ DELIVERABLES ============ -->
 <h2 id="deliverables">5. Deliverables</h2>
 
 <table>
 <tr><th>Artifact</th><th>Path</th><th>Purpose</th></tr>
-<tr><td>Config</td><td class="file">training/configs/sft_qwen3vl_4b.yaml</td><td>verl SFT overrides; consumed by run_sft.sh.</td></tr>
-<tr><td>Launch script</td><td class="file">training/scripts/run_sft.sh</td><td>Single command on remote.</td></tr>
+<tr><td>Launch script</td><td class="file"><a href="../../../training/scripts/run_sft.sh">training/scripts/run_sft.sh</a></td><td>Single command on remote. All overrides as CLI args (matches the stock verl recipe pattern); no separate YAML — verl's base config is loaded by Hydra automatically.</td></tr>
 <tr><td>Dry-run wrapper</td><td class="file">training/scripts/run_sft.sh (DRYRUN=1)</td><td>Surfaces processor mismatch / OOM / template drift in &lt;5 min.</td></tr>
 <tr><td>Checkpoint</td><td class="file">$CKPT_HOME/sft_qwen3vl_4b_v0/global_step_&lt;N&gt;/huggingface/</td><td>Merged HF-format weights. Loadable by vLLM.</td></tr>
 <tr><td>Eval result</td><td class="file">MARS-Voyager/eval_results/Qwen3VL-4B-sft-v0/</td><td>10-task android_world run.</td></tr>
@@ -757,9 +767,10 @@ REPO_ROOT=<span class="tk-str">$(git rev-parse --show-toplevel)</span>
 
 <span class="tk-com"># --- Env --------------------------------------------------------------------</span>
 : <span class="tk-str">"${HF_HOME:=$HOME/.cache/huggingface}"</span>
-: <span class="tk-str">"${CKPT_HOME:=/lustre/scratch/client/movian/research/users/thivt1/ckpt}"</span>
+: <span class="tk-str">"${CKPT_HOME:=training/checkpoints}"</span>   <span class="tk-com"># repo-relative; resolved against REPO_ROOT (we cd above)</span>
 : <span class="tk-str">"${WANDB_PROJECT:=gui_agent}"</span>
 <span class="tk-kw">export</span> HF_HOME CKPT_HOME WANDB_PROJECT
+mkdir -p <span class="tk-str">"$CKPT_HOME"</span>
 
 <span class="tk-com"># W&amp;B: try online first, fall back to offline if api.wandb.ai is unreachable.</span>
 <span class="tk-com">#   - online:  needs outbound HTTPS to api.wandb.ai (NOT a port-forward — wandb</span>
@@ -923,7 +934,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=<span class="tk-str">"${NUM_TR
     <line x1="40" y1="320" x2="60"  y2="320"/>
   </g>
 
-  <text x="20"  y="25" class="dir">$CKPT_HOME/sft_qwen3vl_4b_v0/</text>
+  <text x="20"  y="25" class="dir">training/checkpoints/sft_qwen3vl_4b_v0/</text>
   <text x="65"  y="65" class="dir">├── global_step_70/</text>
   <text x="320" y="65" class="anno">← epoch 1</text>
 
@@ -964,18 +975,23 @@ torchrun --standalone --nnodes=1 --nproc-per-node=<span class="tk-str">"${NUM_TR
 </ul>
 
 <h4>Sync command</h4>
-<pre><code><span class="tk-com"># Run from local machine.</span>
+<pre><code><span class="tk-com"># Run from local repo root. Both sides keep checkpoints inside the repo at</span>
+<span class="tk-com"># training/checkpoints/ (gitignored — see note below).</span>
 REMOTE=<span class="tk-str">thivt1@&lt;remote-host&gt;</span>
-REMOTE_CKPT=<span class="tk-str">/lustre/scratch/client/movian/research/users/thivt1/ckpt/sft_qwen3vl_4b_v0/global_step_210/huggingface</span>
-LOCAL_CKPT=<span class="tk-str">$HOME/checkpoints/sft_qwen3vl_4b_v0/global_step_210/huggingface</span>
+REMOTE_REPO=<span class="tk-str">/path/to/AndroidAutonomy</span>          <span class="tk-com"># wherever you cloned on remote</span>
+SUB=<span class="tk-str">training/checkpoints/sft_qwen3vl_4b_v0/global_step_210/huggingface</span>
 
-mkdir -p <span class="tk-str">"$LOCAL_CKPT"</span>
+mkdir -p <span class="tk-str">"$SUB"</span>
 
 <span class="tk-com"># -a: archive (preserve perms/times). -P: progress + partial resume.</span>
 <span class="tk-com"># -h: human-readable sizes. --checksum: verify by content hash, not mtime.</span>
 rsync -aP -h --checksum \
-  <span class="tk-str">"$REMOTE:$REMOTE_CKPT/"</span> \
-  <span class="tk-str">"$LOCAL_CKPT/"</span></code></pre>
+  <span class="tk-str">"$REMOTE:$REMOTE_REPO/$SUB/"</span> \
+  <span class="tk-str">"./$SUB/"</span></code></pre>
+
+<div class="callout">
+  <strong>Gitignore.</strong> Add <code>training/checkpoints/</code> to <a href="../../../.gitignore"><code>.gitignore</code></a> alongside the existing <code>training/verl/</code> and <code>training/data/sft_v*/</code> entries. Each kept ckpt is ~9 GB — must never get committed.
+</div>
 
 <h4>Verify the transfer</h4>
 <p>rsync's <code>--checksum</code> already validated content equality during transfer. As a belt-and-suspenders, compare safetensors hashes once more and confirm the file list is complete:</p>
@@ -1005,7 +1021,8 @@ diff /tmp/remote.sha256 /tmp/local.sha256 &amp;&amp; <span class="tk-fn">echo</s
 
   <div id="t5a" class="tab-content active">
     <p>Run on <strong>local</strong>. Use the <em>same flag set as the off-the-shelf eval</em> (cf. <a href="../../../MARS-Voyager/run_android_world_Thi.sh">run_android_world_Thi.sh</a>); only the <code>--model</code> path changes — point it at the synced checkpoint. If vLLM can't serve our checkpoint with these flags, the eval will silently use the wrong model — or worse, the wrong chat template.</p>
-<pre><code>CKPT=<span class="tk-str">$HOME/checkpoints/sft_qwen3vl_4b_v0/global_step_210/huggingface</span>
+<pre><code><span class="tk-com"># From local repo root.</span>
+CKPT=<span class="tk-str">training/checkpoints/sft_qwen3vl_4b_v0/global_step_210/huggingface</span>
 
 vllm serve <span class="tk-str">"$CKPT"</span> \
   --served-model-name <span class="tk-str">Qwen3-VL-4B-Instruct-sft-v0</span> \
@@ -1130,6 +1147,121 @@ python test_android_world.py \
 </ul>
 
 <hr>
+
+<h2 id="runai">14. Porting to runai / H100</h2>
+
+<div class="card">
+<p>
+  Superpod (A100 40GB) is the <strong>debug</strong> environment. Real training will run on the runai cluster with H100 80GB nodes. The settings in <a href="../../../training/scripts/run_sft.sh"><span class="file">training/scripts/run_sft.sh</span></a> are tuned for A100 40GB and are deliberately conservative. Below is what to change when moving over.
+</p>
+
+<h3>Hardware-dictated changes</h3>
+
+<table>
+<thead><tr><th>Knob</th><th>Superpod (A100 40GB)</th><th>runai (H100 80GB)</th><th>Why</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>model.enable_gradient_checkpointing</code></td>
+  <td><code>true</code></td>
+  <td><code>false</code></td>
+  <td>80GB has headroom; activation recompute is a ~25–30% throughput tax we no longer need.</td>
+</tr>
+<tr>
+  <td><code>+model.override_config.attn_implementation</code></td>
+  <td><code>sdpa</code> (flash-attn wheel needs glibc 2.32; node has 2.31)</td>
+  <td><em>drop the override</em> → defaults to <code>flash_attention_2</code></td>
+  <td>H100 nodes typically run a newer base image with glibc ≥2.34. Verify with <code>ldd --version</code> inside the runai container; if so, <code>pip install flash-attn==2.8.1</code> works out of the box.</td>
+</tr>
+<tr>
+  <td><code>data.max_token_len_per_gpu</code></td>
+  <td><code>16384</code></td>
+  <td><code>32768</code> (start) → tune up</td>
+  <td>2× the per-GPU memory means roughly 2× the dynamic-batch token budget. Watch peak memory on the first few steps and push higher if there's slack.</td>
+</tr>
+<tr>
+  <td><code>data.train_batch_size</code> (global)</td>
+  <td><code>32</code></td>
+  <td><code>64</code> or <code>128</code></td>
+  <td>With dynamic batching the effective micro-batch grows automatically when you bump <code>max_token_len_per_gpu</code>, but global batch is independent. Pick from the LR-schedule shape you want.</td>
+</tr>
+<tr>
+  <td><code>engine.ulysses_sequence_parallel_size</code></td>
+  <td><code>2</code></td>
+  <td><code>1</code> (most likely)</td>
+  <td>SP was needed on 40GB to fit long sequences. On 80GB with the token budget above, a single-rank pass fits — fewer collectives, simpler topology.</td>
+</tr>
+<tr>
+  <td><code>CUDA_VISIBLE_DEVICES</code> masking</td>
+  <td>Mask GPU at PCI <code>47:00.0</code> (bad ECC)</td>
+  <td><em>drop the mask</em></td>
+  <td>Hardware-specific to <code>sdc2-hpc-dgx-a100-004</code>. runai allocates fresh GPUs.</td>
+</tr>
+<tr>
+  <td><code>NUM_TRAINERS</code></td>
+  <td>6 (8 minus 1 bad minus 1 to keep DP×SP even)</td>
+  <td>Match the runai job's <code>nvidia.com/gpu</code> request (likely 8)</td>
+  <td>Set via the runai job spec, then read into the script via env.</td>
+</tr>
+</tbody>
+</table>
+
+<h3>Paths &amp; environment</h3>
+
+<table>
+<thead><tr><th>Item</th><th>Superpod</th><th>runai</th></tr></thead>
+<tbody>
+<tr><td>Filesystem</td><td><code>/lustre/scratch/client/movian/...</code></td><td>runai PVC mount (typically <code>/workspace</code> or <code>/mnt/...</code>; check the job's <code>volumeMounts</code>).</td></tr>
+<tr><td><code>HF_HOME</code></td><td><code>$HOME/.cache/huggingface</code> on lustre</td><td>Point at a persistent PVC, not the container's writable layer (lost on pod restart).</td></tr>
+<tr><td><code>CKPT_HOME</code></td><td><code>training/checkpoints/</code> (repo-relative)</td><td>Same path, but the repo itself should live on a PVC so checkpoints survive pod evictions.</td></tr>
+<tr><td>Container image</td><td>Conda env on bare host</td><td>Pre-built runai image with CUDA 12.x + torch 2.8 + the pins in <a href="../../../training/PINS.md"><span class="file">training/PINS.md</span></a>. Don't <code>conda activate</code> inside the container — just <code>pip install -r</code> at image build time.</td></tr>
+<tr><td>W&amp;B reachability</td><td>Proxy blocks <code>api.wandb.ai</code>; needs SOCKS tunnel or offline+sync</td><td>Usually has direct egress. The auto-probe in the script (<a href="../../../training/scripts/run_sft.sh"><span class="file">training/scripts/run_sft.sh</span></a> lines 46–53) will pick <code>online</code> automatically if it works.</td></tr>
+<tr><td><code>ROCR_VISIBLE_DEVICES</code></td><td>Unset defensively (some hosts export it)</td><td>Leave the <code>unset</code> in — harmless.</td></tr>
+</tbody>
+</table>
+
+<h3>Things to <em>not</em> change</h3>
+<ul>
+  <li>Pinned versions: transformers 4.57.3, verl v0.7.1, Qwen3-VL revision <code>ebb281e…</code>. Re-pinning is a separate experiment.</li>
+  <li><code>data.max_length</code>: a property of the dataset, not the hardware. Re-tune it once (TODO below) and use the same value everywhere.</li>
+  <li>Optimizer block (<code>optim.lr=2e-5</code>, betas, weight decay, warmup): hyperparameters, decouple from hardware migration.</li>
+  <li><code>checkpoint.save_contents=[model,hf_model,extra]</code>: still needed; eval reads <code>hf_model/</code>.</li>
+  <li>Reverse logic: do NOT remove the <code>WANDB_MODE</code> auto-probe — it makes the script portable between both clusters with no edits.</li>
+</ul>
+
+<h3>Migration checklist</h3>
+<ol>
+  <li>Confirm runai image has glibc ≥ 2.32 (<code>ldd --version</code>) and <code>flash-attn==2.8.1</code> imports cleanly. If yes → drop the <code>sdpa</code> override.</li>
+  <li>Confirm PVC layout: where the repo lives, where <code>HF_HOME</code> lives, where <code>training/checkpoints/</code> lives. Update those env vars in the job spec, not in <code>run_sft.sh</code>.</li>
+  <li>Pre-fetch the pinned Qwen3-VL snapshot into the PVC once (avoid every pod re-downloading 9 GB).</li>
+  <li>Run the same <code>DRYRUN=1</code> command on H100 first. If loss is finite and a checkpoint is written, scale up.</li>
+  <li>Launch full run with the table values above. Compare first-100-step loss curve to superpod's run as a sanity check (same data, same model, similar curve modulo batch-size effect).</li>
+</ol>
+</div>
+
+<h2 id="todo">15. TODO / follow-ups</h2>
+<ul>
+  <li>
+    <strong>Re-pick <code>data.max_length</code> from the actual token distribution.</strong>
+    During the dry run we hit <code>ValueError: sequence_length=4578 is larger than self.max_length=4096</code> and bumped to <code>8192</code> as a guess. The dataset build already records a token-length histogram at <a href="../../../training/data/sft_v0/stats/stats.md"><span class="file">training/data/sft_v0/stats/stats.md</span></a> (min/median/p95/max). Read the p99/max from that and either (a) drop <code>max_length</code> back to whatever covers ≥99% of rows, or (b) keep 8192 and switch <code>truncation=error</code> → <code>truncation=right</code> to silently drop the long tail. Either is fine; don't leave 8192 + <code>truncation=error</code> unexamined since it's just a guess.
+  </li>
+  <li>
+    <strong>Install flash-attn properly before the full Step 4 run.</strong>
+    The dry run is on SDPA via <code>+model.override_config.attn_implementation=sdpa</code>; flash-attn 2 gives ~30% speedup at this scale. Once installed, drop the override (or change <code>sdpa</code> → <code>flash_attention_2</code>).
+  </li>
+  <li>
+    <strong>File ticket for the bad GPU.</strong>
+    PCI <code>00000000:47:00.0</code> on <code>sdc2-hpc-dgx-a100-004</code> showed ~500 uncorrectable DRAM ECC errors. Until ops replaces it, keep <code>CUDA_VISIBLE_DEVICES</code> masking it out (consider adding to your shell rc on this node).
+  </li>
+  <li>
+    <strong>Set up the W&amp;B SOCKS reverse tunnel before the full run.</strong>
+    Corporate proxy blocks <code>api.wandb.ai</code> with <code>403 VG-Blockpage</code>. Dry run ran offline; the full run is worth having live curves. See <a href="#wandb-tunnel">section 4 — W&amp;B port-forward recipes</a>.
+  </li>
+  <li>
+    <strong>Investigate the fp32 checkpoint upcast.</strong>
+    verl writes the merged <code>hf_model</code> safetensors at fp32 (~18 GB / ckpt) even though training runs in bf16 — confirmed in the dry run. 2× the disk and rsync time vs. necessary. Check verl's <code>fsdp_checkpoint_manager.py</code> for a save-dtype option, or add a tiny post-train script that re-saves the final ckpt as bf16 before Step 5 sync. Cosmetic; defer until after the full run is producing real numbers.
+  </li>
+</ul>
+
 <p class="small">
   After this plan completes, the next is the GRPO/online-RL one (Phase 2 of parent), tentatively at <span class="file">tasks/training-codebase/grpo-run/plan.md</span>.
 </p>

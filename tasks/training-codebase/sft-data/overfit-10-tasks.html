@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SFT Overfit Plan — 10 Tasks · sft_v0.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #f1ead8;
+    --paper-deep: #e8dfc7;
+    --paper-edge: #d9cfb3;
+    --ink: #1c1611;
+    --ink-soft: #4a3f31;
+    --ink-faint: #7a6c57;
+    --rule: #2a2118;
+    --accent: #a23a1f;
+    --accent-deep: #6e2410;
+    --accent-soft: #d6a78f;
+    --highlight: #ead488;
+    --good: #2f5d3a;
+    --warn: #8a5a12;
+    --bad: #7a1f10;
+    --serif-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+    --serif-body: "Newsreader", "Iowan Old Style", Georgia, serif;
+    --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif-body);
+    font-size: 17px;
+    line-height: 1.62;
+    font-feature-settings: "ss01", "onum", "calt";
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(rgba(28, 22, 17, 0.04) 1px, transparent 1px),
+      radial-gradient(rgba(28, 22, 17, 0.025) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1px 2px;
+  }
+  ::selection { background: var(--accent); color: var(--paper); }
+
+  /* ------------- top masthead ------------- */
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    padding: 28px 56px 22px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: 24px;
+  }
+  .masthead .left { display: flex; flex-direction: column; gap: 6px; }
+  .masthead .kicker {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .masthead h1 {
+    font-family: var(--serif-display);
+    font-weight: 350;
+    font-size: 56px;
+    line-height: 1;
+    margin: 0;
+    letter-spacing: -0.02em;
+    font-variation-settings: "opsz" 144, "SOFT" 30;
+  }
+  .masthead h1 em {
+    font-style: italic;
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+    color: var(--accent-deep);
+  }
+  .masthead .meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-align: right;
+    line-height: 1.7;
+  }
+  .masthead .meta b { color: var(--ink); font-weight: 500; }
+
+  /* ------------- frame ------------- */
+  .frame {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr) 240px;
+    gap: 56px;
+    padding: 36px 56px 96px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1080px) {
+    .frame { grid-template-columns: 1fr; gap: 24px; padding: 28px 24px 64px; }
+    .toc, .margin { display: none; }
+  }
+
+  /* ------------- toc ------------- */
+  .toc {
+    position: sticky;
+    top: 28px;
+    align-self: start;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.9;
+    color: var(--ink-soft);
+  }
+  .toc .label {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+  }
+  .toc ol { list-style: none; padding: 0; margin: 0; counter-reset: t; }
+  .toc li { counter-increment: t; }
+  .toc li::before {
+    content: counter(t, decimal-leading-zero);
+    color: var(--accent);
+    margin-right: 10px;
+  }
+  .toc a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px dotted transparent;
+  }
+  .toc a:hover { border-bottom-color: var(--accent); color: var(--accent-deep); }
+
+  /* ------------- body content ------------- */
+  main { min-width: 0; }
+  main > section { margin-bottom: 72px; }
+  main > section:last-child { margin-bottom: 0; }
+
+  h2 {
+    font-family: var(--serif-display);
+    font-weight: 400;
+    font-size: 30px;
+    line-height: 1.15;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+    font-variation-settings: "opsz" 72, "SOFT" 50;
+  }
+  h2 .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    display: block;
+    margin-bottom: 8px;
+    font-variation-settings: normal;
+  }
+  h3 {
+    font-family: var(--serif-display);
+    font-weight: 500;
+    font-size: 19px;
+    margin: 32px 0 8px;
+    font-variation-settings: "opsz" 36;
+  }
+  p { margin: 12px 0; }
+  p.lede {
+    font-family: var(--serif-display);
+    font-weight: 300;
+    font-size: 22px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    margin: 8px 0 28px;
+    font-variation-settings: "opsz" 36, "SOFT" 80;
+  }
+  p.lede em {
+    color: var(--accent-deep);
+    font-style: italic;
+    font-variation-settings: "opsz" 36, "SOFT" 100, "WONK" 1;
+  }
+  a { color: var(--accent-deep); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+  a:hover { background: var(--accent); color: var(--paper); border-bottom-color: var(--accent); }
+  code, .mono { font-family: var(--mono); font-size: 0.92em; }
+  p code, li code, td code {
+    background: var(--paper-deep);
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: 1px solid var(--paper-edge);
+  }
+
+  ul, ol { padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  /* ------------- callouts ------------- */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: linear-gradient(90deg, rgba(162, 58, 31, 0.06), rgba(162, 58, 31, 0));
+    padding: 14px 20px 16px;
+    margin: 20px 0;
+  }
+  .callout .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .callout p { margin: 4px 0; }
+  .callout.decision { border-left-color: var(--ink); background: linear-gradient(90deg, rgba(28,22,17,0.06), transparent); }
+  .callout.decision .tag { color: var(--ink); }
+  .callout.risk { border-left-color: var(--warn); background: linear-gradient(90deg, rgba(138,90,18,0.08), transparent); }
+  .callout.risk .tag { color: var(--warn); }
+
+  /* ------------- tables ------------- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 15px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px 8px 0;
+    border-bottom: 1px solid var(--paper-edge);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 6px;
+  }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tr.total td { border-top: 1px solid var(--rule); border-bottom: 2px double var(--rule); font-weight: 500; }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: var(--paper-deep);
+    color: var(--ink);
+  }
+  .pill.good { background: rgba(47,93,58,0.12); border-color: var(--good); color: var(--good); }
+  .pill.warn { background: rgba(138,90,18,0.12); border-color: var(--warn); color: var(--warn); }
+  .pill.bad  { background: rgba(122,31,16,0.12); border-color: var(--bad); color: var(--bad); }
+
+  /* ------------- recommendation card ------------- */
+  .reco {
+    margin: 28px 0 8px;
+    border: 1px solid var(--rule);
+    background: var(--paper-deep);
+    padding: 0;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+  }
+  .reco .stamp {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 22px 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .reco .stamp::after {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border: 1px dashed rgba(241, 234, 216, 0.25);
+    pointer-events: none;
+  }
+  .reco .stamp .kicker {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--accent-soft);
+  }
+  .reco .stamp .big {
+    font-family: var(--serif-display);
+    font-size: 56px;
+    line-height: 0.95;
+    font-weight: 400;
+    font-variation-settings: "opsz" 144;
+  }
+  .reco .stamp .big sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent-soft);
+    margin-left: 6px;
+    vertical-align: baseline;
+  }
+  .reco .stamp .sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--paper-edge);
+    letter-spacing: 0.06em;
+  }
+  .reco .body { padding: 18px 22px; }
+  .reco .body p { margin: 6px 0; font-size: 15.5px; }
+  .reco .body .formula {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    background: var(--paper);
+    padding: 8px 10px;
+    border: 1px solid var(--paper-edge);
+    margin: 10px 0 0;
+  }
+
+  /* ------------- code blocks ------------- */
+  pre {
+    background: #1c1611;
+    color: #ead7b3;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    margin: 16px 0;
+    border-left: 3px solid var(--accent);
+  }
+  pre .k { color: #d6a78f; }
+  pre .s { color: #b8c98a; }
+  pre .c { color: #7a6c57; font-style: italic; }
+  pre .n { color: #f0c674; }
+
+  /* ------------- margin notes ------------- */
+  .margin {
+    position: sticky;
+    top: 28px;
+    align-self: start;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.65;
+    color: var(--ink-soft);
+  }
+  .margin .label {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+  }
+  .margin .note {
+    border-top: 1px solid var(--paper-edge);
+    padding: 12px 0;
+  }
+  .margin .note b { color: var(--ink); display: block; margin-bottom: 4px; font-weight: 500; }
+
+  /* ------------- footer ornament ------------- */
+  .ornament {
+    text-align: center;
+    font-family: var(--mono);
+    color: var(--ink-faint);
+    font-size: 11px;
+    letter-spacing: 0.4em;
+    margin: 80px 0 0;
+  }
+
+  /* ------------- step list ------------- */
+  ol.steps { list-style: none; padding: 0; counter-reset: s; }
+  ol.steps > li {
+    counter-increment: s;
+    padding: 14px 0 14px 56px;
+    border-bottom: 1px solid var(--paper-edge);
+    position: relative;
+  }
+  ol.steps > li::before {
+    content: "§ " counter(s, decimal-leading-zero);
+    position: absolute;
+    left: 0;
+    top: 16px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+  }
+  ol.steps > li:last-child { border-bottom: none; }
+  ol.steps > li b { font-family: var(--serif-display); font-weight: 500; font-size: 18px; font-variation-settings: "opsz" 36; }
+
+  /* ------------- data flow diagram ------------- */
+  .flow {
+    margin: 24px 0 8px;
+    padding: 22px 22px 18px;
+    background: var(--paper-deep);
+    border: 1px solid var(--paper-edge);
+    overflow-x: auto;
+  }
+  .flow svg { display: block; width: 100%; height: auto; min-width: 720px; font-family: var(--mono); }
+  .flow .cap {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  /* ------------- mockup card ------------- */
+  .mock {
+    border: 1px solid var(--paper-edge);
+    background: var(--paper);
+    margin: 18px 0;
+  }
+  .mock header {
+    background: var(--paper-deep);
+    border-bottom: 1px solid var(--paper-edge);
+    padding: 8px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .mock header .dots { display: flex; gap: 5px; }
+  .mock header .dots span {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--paper-edge);
+  }
+  .mock header .path { letter-spacing: 0.04em; }
+  .mock pre { margin: 0; border-left: none; background: #1c1611; }
+
+  /* ------------- decision table inline previews ------------- */
+  .preview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 18px 0;
+  }
+  @media (max-width: 720px) { .preview-grid { grid-template-columns: 1fr; } }
+
+  /* ------------- pull quote ------------- */
+  .pull {
+    font-family: var(--serif-display);
+    font-weight: 300;
+    font-size: 26px;
+    line-height: 1.3;
+    color: var(--ink);
+    margin: 32px 0;
+    padding: 0 0 0 32px;
+    border-left: 2px solid var(--accent);
+    font-variation-settings: "opsz" 60, "SOFT" 100;
+  }
+  .pull em {
+    font-style: italic;
+    color: var(--accent-deep);
+    font-variation-settings: "opsz" 60, "SOFT" 100, "WONK" 1;
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="left">
+    <div class="kicker">Internal · sft_v0.1 · planning brief</div>
+    <h1>An <em>overfit</em>, by design.</h1>
+  </div>
+  <div class="meta">
+    <div><b>Author</b> &nbsp; thi</div>
+    <div><b>Date</b> &nbsp; 2026-05-12</div>
+    <div><b>Parent</b> &nbsp; <a href="plan.md">sft-data/plan.md</a></div>
+    <div><b>Status</b> &nbsp; <span class="pill warn">proposed</span></div>
+  </div>
+</header>
+
+<div class="frame">
+
+  <!-- ============ TOC ============ -->
+  <aside class="toc">
+    <div class="label">Contents</div>
+    <ol>
+      <li><a href="#purpose">Why this exists</a></li>
+      <li><a href="#combinations">Sizing <code>n_task_combinations</code></a></li>
+      <li><a href="#selection">Choosing the 10 tasks</a></li>
+      <li><a href="#pipeline">Pipeline at a glance</a></li>
+      <li><a href="#procedure">Execution procedure</a></li>
+      <li><a href="#risks">Risks &amp; off-ramps</a></li>
+      <li><a href="#deliverable">Deliverable shape</a></li>
+    </ol>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main>
+
+    <!-- ============ PURPOSE ============ -->
+    <section id="purpose">
+      <h2><span class="num">§ 01</span>Why this exists</h2>
+      <p class="lede">The <a href="plan.md">sft_v0 build</a> spreads <b>2,250 steps</b> over <b>97 tasks</b> — roughly <em>23 steps per task</em>. That is enough breadth to validate the build pipeline, and not nearly enough depth to teach a 4B model anything per task. The current plan validates the <em>data path</em>; this plan validates the <em>training path</em>.</p>
+
+      <div class="callout">
+        <div class="tag">Goal</div>
+        <p>Produce an SFT checkpoint that <b>measurably overfits a narrow task list</b>, so that the eval delta — <code>base@10tasks</code> versus <code>SFT@10tasks</code> — confirms the verl recipe, the chat template, the loss mask, and the vLLM round-trip all function end-to-end.</p>
+      </div>
+
+      <p>This is not a capability claim. The held-out generalization story comes later. The point now is a clean, loud, unambiguous signal that the trainer changes the model on the things we trained it on.</p>
+
+      <p class="pull">If the loss curve drops and the eval score doesn't move, <em>something is wrong</em> — and on the current dataset shape, we wouldn't see it.</p>
+    </section>
+
+    <!-- ============ N_COMBINATIONS ============ -->
+    <section id="combinations">
+      <h2><span class="num">§ 02</span>Sizing <code>n_task_combinations</code></h2>
+
+      <p>The knob (<a href="../../../MARS-Voyager/androidworld/android_world/suite_utils.py">suite_utils.py:130</a>) controls how many parameterised instances of each task are constructed per run. Each instance is a fresh <code>generate_random_params()</code> draw under a deterministic per-instance seed.</p>
+
+      <h3>Three forces in tension</h3>
+      <table>
+        <thead><tr><th style="width:30%">Force</th><th>Direction</th><th>Bound</th></tr></thead>
+        <tbody>
+          <tr><td><b>Demonstration count per task</b></td><td>↑ helps overfit</td><td>want ≥ 15 successful rollouts/task after dedupe</td></tr>
+          <tr><td><b>Emulator time</b></td><td>↑ linear cost</td><td>~3 min/instance × workers parallelism</td></tr>
+          <tr><td><b>Param-pool collisions</b></td><td>↓ at large N</td><td>tasks with small candidate pools waste runs past N≈20-30</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Yield model</h3>
+      <p>Per-task expected yield, where <code>p_succ</code> is the base-model success rate on the task and <code>r</code> is the retry budget:</p>
+      <pre><span class="c"># expected successful rollouts per task, before dedupe</span>
+<span class="n">E[succ]</span> = N · (1 − (1 − p_succ)^(1 + r))</pre>
+
+      <p>For the tasks UI-Voyager generated successful rollouts on (see <a href="../../../training/data/sft_v0/stats/stats.md">sft_v0/stats</a>), <code>p_succ ≈ 0.4–0.7</code>. With <code>r = 5</code> retries, the second factor saturates near <code>1.0</code> — so <b>E[succ] ≈ N</b> for the chosen tasks. Retries do the heavy lifting against the few harder ones.</p>
+
+      <div class="reco">
+        <div class="stamp">
+          <div class="kicker">Target</div>
+          <div class="big">30<sub>per task</sub></div>
+          <div class="sub">n_task_combinations</div>
+        </div>
+        <div class="body">
+          <p><b>Why 30.</b> Delivers ≈ 20–25 unique successful rollouts per task after retries and dedupe — comfortably above the ≥ 15 floor. Past 30, low-cardinality tasks (binary toggles, two-choice menus) start producing rollouts identical at the param layer; dedupe keeps them by seed, inflating the dataset with behavioural duplicates.</p>
+          <div class="formula">10 tasks × 30 combinations × ~3 min ≈ 15 emulator-hours.  With 4 workers ≈ 4 wall-clock hours.</div>
+        </div>
+      </div>
+
+      <h3>Budget under different worker counts</h3>
+      <table>
+        <thead><tr><th>Workers</th><th class="num">Instances</th><th class="num">Median runtime</th><th class="num">Worst case (with retries)</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="num">300</td><td class="num">15 h</td><td class="num">~25 h</td><td>only if no parallel emulators</td></tr>
+          <tr><td>2</td><td class="num">300</td><td class="num">7.5 h</td><td class="num">~13 h</td><td>safe overnight</td></tr>
+          <tr><td>4</td><td class="num">300</td><td class="num">4 h</td><td class="num">~7 h</td><td><span class="pill good">recommended</span></td></tr>
+          <tr><td>8</td><td class="num">300</td><td class="num">2 h</td><td class="num">~3.5 h</td><td>only if RAM / disk allow</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout decision">
+        <div class="tag">Decision</div>
+        <p><b><code>n_task_combinations = 30</code></b>, <code>task_random_seed = 42</code>, <code>RETRY_FAILED_TASKS = 1</code>, <code>FAILED_TASK_MAX_STREAK = 5</code>. Run with <code>NUM_WORKERS = 4</code> as default. Adjust <em>downward</em> only if a task in §03 is shown to have a candidate pool &lt; 20; adjust <em>upward</em> only after seeing the first build's per-task yield.</p>
+      </div>
+    </section>
+
+    <!-- ============ SELECTION ============ -->
+    <section id="selection">
+      <h2><span class="num">§ 03</span>Choosing the 10 tasks</h2>
+
+      <p>Selection is a function over five axes. The cheapest path is to rank every task in <a href="../../../MARS-Voyager/eval_results/">eval_results/</a> by a composite score and pick the top 10 that also satisfy a diversity floor.</p>
+
+      <h3>Selection axes</h3>
+      <table>
+        <thead><tr><th style="width:24%">Axis</th><th>Why it matters</th><th>How we measure</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Existing demo coverage</b></td>
+            <td>Tasks already known to produce successful UI-Voyager rollouts will continue to. Zero cold-start risk.</td>
+            <td>Count of <code>*_succ.jsonl</code> in <code>eval_results/</code> for that task, post parse-gate.</td>
+          </tr>
+          <tr>
+            <td><b>Trajectory length</b></td>
+            <td>Want 8–25 steps — long enough to carry signal, short enough that 30 rollouts fit the emulator budget.</td>
+            <td>Median step count from sft_v0 task list.</td>
+          </tr>
+          <tr>
+            <td><b>Param-pool cardinality</b></td>
+            <td>Tasks with pool &lt; 20 will saturate before N = 30 and inflate the duplicate count.</td>
+            <td>Static inspection of <code>generate_random_params</code> in the task source.</td>
+          </tr>
+          <tr>
+            <td><b>Action diversity</b></td>
+            <td>The loss mask must exercise more than just <code>click</code>. Want the 10 tasks to span ≥ 4 distinct action types.</td>
+            <td>Action-type histogram of the existing rollouts for that task.</td>
+          </tr>
+          <tr>
+            <td><b>App diversity</b></td>
+            <td>Picking 10 Markor tasks would teach one app's UI grammar. Want ≥ 5 distinct apps.</td>
+            <td>Task-name prefix (Markor*, Files*, Contacts*, …).</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Procedure (deterministic, no judgment calls)</h3>
+      <ol class="steps">
+        <li><b>Score every task</b> currently in <a href="../../../training/data/sft_v0/stats/stats.md">sft_v0/stats</a>. Composite =
+          <code>0.5 · rollouts_after_dedupe + 0.3 · (steps in [8,25] ? 1 : 0) + 0.2 · log(param_pool_size)</code>. Compute in a small notebook against the manifest.</li>
+        <li><b>Sort descending</b>, then walk the list top-to-bottom and add tasks to the chosen set under two diversity guards:
+          <ul>
+            <li>App prefix must remain represented ≥ 1× by the end. If chosen set already has 3 from one app, skip further candidates from that app until the set hits 10 with ≥ 5 apps.</li>
+            <li>Action mix: by item 10, the set's pooled action histogram must include at least <code>click</code>, <code>input_text</code>, <code>swipe</code>, and one of <code>system_button</code> / <code>long_press</code> / <code>open_app</code>.</li>
+          </ul>
+        </li>
+        <li><b>Verify candidate pool size</b> by reading each chosen task's <code>generate_random_params</code>. If any task has fewer than ≈ 20 distinct param combinations, drop it from the set and continue down the ranked list.</li>
+        <li><b>Freeze the list</b> in a new config file <code>androidworld/eval/configs/demos_overfit10.yaml</code>; commit it before the run so the choice is part of the manifest.</li>
+      </ol>
+
+      <h3>Provisional shortlist (from <code>sft_v0/stats</code>, pre-verification)</h3>
+      <p>These ten emerged at the top when applying the score above against the existing stats table. They are <em>candidates only</em> — step 3 above can drop any of them.</p>
+      <table>
+        <thead><tr><th>Task</th><th class="num">Existing rollouts</th><th class="num">Median steps</th><th>App</th><th>Notable action</th></tr></thead>
+        <tbody>
+          <tr><td><code>ContactsAddContact</code></td><td class="num">2</td><td class="num">23</td><td>Contacts</td><td><code>input_text</code></td></tr>
+          <tr><td><code>MarkorCreateNote</code></td><td class="num">3</td><td class="num">26</td><td>Markor</td><td><code>input_text</code></td></tr>
+          <tr><td><code>FilesMoveFile</code></td><td class="num">2</td><td class="num">31</td><td>Files</td><td><code>long_press</code></td></tr>
+          <tr><td><code>ClockTimerEntry</code></td><td class="num">3</td><td class="num">30</td><td>Clock</td><td><code>click</code> · numeric</td></tr>
+          <tr><td><code>AudioRecorderRecordAudio</code></td><td class="num">2</td><td class="num">17</td><td>AudioRecorder</td><td><code>system_button</code></td></tr>
+          <tr><td><code>ExpenseAddSingle</code></td><td class="num">2</td><td class="num">24</td><td>Expense</td><td><code>input_text</code> dense</td></tr>
+          <tr><td><code>ExpenseDeleteSingle</code></td><td class="num">3</td><td class="num">22</td><td>Expense</td><td><code>swipe</code> on list</td></tr>
+          <tr><td><code>MarkorDeleteAllNotes</code></td><td class="num">3</td><td class="num">35</td><td>Markor</td><td><code>long_press</code> · multi-select</td></tr>
+          <tr><td><code>ClockStopWatchRunning</code></td><td class="num">3</td><td class="num">12</td><td>Clock</td><td><code>click</code> short</td></tr>
+          <tr><td><code>BrowserMaze</code></td><td class="num">1</td><td class="num">19</td><td>Browser</td><td><code>swipe</code> · spatial</td></tr>
+        </tbody>
+      </table>
+      <p style="color: var(--ink-faint); font-size: 14px; font-style: italic;">Five apps represented, four action types in the pooled mix, median step counts comfortably in window. Two Markor entries (one creation, one bulk delete) — within the diversity guard's "≤ 3 per app" allowance.</p>
+
+      <div class="callout risk">
+        <div class="tag">Caution</div>
+        <p><b><code>BrowserMaze</code> &amp; <code>ClockStopWatchRunning</code></b> have small param pools — verify in step 3 before locking. <b><code>MarkorDeleteAllNotes</code></b> medians 35 steps; with 30 rollouts that is ~1,050 steps from one task, which may dominate the loss. Consider capping its rollouts to 20 if it shows up disproportionate in the post-build stats.</p>
+      </div>
+    </section>
+
+    <!-- ============ PIPELINE ============ -->
+    <section id="pipeline">
+      <h2><span class="num">§ 04</span>Pipeline at a glance</h2>
+      <p>Where the new rollouts come from, how they merge with what already exists, and what feeds the trainer.</p>
+
+      <div class="flow">
+        <div class="cap">Data flow · sft_v0 → sft_v0.1</div>
+        <svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#1c1611"/>
+            </marker>
+            <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#a23a1f"/>
+            </marker>
+            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+              <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#d9cfb3" stroke-width="0.5"/>
+            </pattern>
+          </defs>
+          <rect width="1000" height="380" fill="url(#grid)" opacity="0.5"/>
+
+          <!-- Stage labels (top) -->
+          <g font-size="10" fill="#7a6c57" font-family="JetBrains Mono" letter-spacing="2">
+            <text x="100" y="22">SOURCE</text>
+            <text x="320" y="22">GENERATE</text>
+            <text x="540" y="22">BUILD</text>
+            <text x="760" y="22">TRAIN + EVAL</text>
+          </g>
+          <line x1="40" y1="32" x2="960" y2="32" stroke="#d9cfb3" stroke-width="1"/>
+
+          <!-- existing rollouts box -->
+          <g>
+            <rect x="40" y="60" width="170" height="60" fill="#f1ead8" stroke="#1c1611" stroke-width="1.2"/>
+            <text x="125" y="82" text-anchor="middle" font-size="13" font-family="Newsreader" font-weight="500" fill="#1c1611">existing rollouts</text>
+            <text x="125" y="100" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#4a3f31">eval_results/  · 215</text>
+            <text x="125" y="113" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#7a6c57">97 tasks · ~23/task</text>
+          </g>
+
+          <!-- 10-task config box -->
+          <g>
+            <rect x="40" y="170" width="170" height="60" fill="#1c1611" stroke="#1c1611"/>
+            <text x="125" y="192" text-anchor="middle" font-size="13" font-family="Newsreader" font-weight="500" fill="#f1ead8">demos_overfit10.yaml</text>
+            <text x="125" y="210" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#d6a78f">tasks: [10]</text>
+            <text x="125" y="223" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#d6a78f">n_combinations: 30</text>
+          </g>
+
+          <!-- arrow config -> emulator -->
+          <line x1="210" y1="200" x2="270" y2="200" stroke="#a23a1f" stroke-width="2" marker-end="url(#arrR)"/>
+
+          <!-- emulator / agent -->
+          <g>
+            <rect x="270" y="170" width="170" height="60" fill="#f1ead8" stroke="#a23a1f" stroke-width="1.5"/>
+            <text x="355" y="192" text-anchor="middle" font-size="13" font-family="Newsreader" font-weight="500" fill="#1c1611">android_world</text>
+            <text x="355" y="208" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#4a3f31">4 workers · retry=5</text>
+            <text x="355" y="221" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#a23a1f" font-style="italic">~4 wall-hours</text>
+          </g>
+
+          <!-- arrow emulator -> new rollouts -->
+          <line x1="355" y1="170" x2="355" y2="125" stroke="#a23a1f" stroke-width="2" marker-end="url(#arrR)"/>
+
+          <!-- new rollouts -->
+          <g>
+            <rect x="270" y="60" width="170" height="60" fill="#f1ead8" stroke="#1c1611" stroke-width="1.2"/>
+            <text x="355" y="82" text-anchor="middle" font-size="13" font-family="Newsreader" font-weight="500" fill="#1c1611">new rollouts</text>
+            <text x="355" y="100" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#4a3f31">~200 succ · 10 tasks</text>
+            <text x="355" y="113" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#7a6c57">~20/task after dedupe</text>
+          </g>
+
+          <!-- merge arrows into builder -->
+          <line x1="210" y1="90" x2="530" y2="90" stroke="#1c1611" stroke-width="1.5" stroke-dasharray="0" marker-end="url(#arr)"/>
+          <line x1="440" y1="90" x2="530" y2="90" stroke="#1c1611" stroke-width="1.5"/>
+          <text x="475" y="80" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#7a6c57" font-style="italic">union by (task, seed)</text>
+
+          <!-- builder box -->
+          <g>
+            <rect x="530" y="60" width="170" height="170" fill="#1c1611" stroke="#1c1611"/>
+            <text x="615" y="92" text-anchor="middle" font-size="13" font-family="Newsreader" font-weight="500" fill="#f1ead8">build_sft_v0.py</text>
+            <line x1="555" y1="105" x2="675" y2="105" stroke="#4a3f31" stroke-width="0.5"/>
+            <text x="615" y="125" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#d6a78f">parse-gate</text>
+            <text x="615" y="142" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#d6a78f">image-load check</text>
+            <text x="615" y="159" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#d6a78f">(task,seed) dedupe</text>
+            <text x="615" y="176" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#d6a78f">render messages</text>
+            <text x="615" y="193" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#d6a78f">verl collator smoke</text>
+            <text x="615" y="216" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#a23a1f">--output-dir sft_v0.1</text>
+          </g>
+
+          <!-- arrow builder -> parquet -->
+          <line x1="700" y1="145" x2="760" y2="145" stroke="#1c1611" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- parquet -->
+          <g>
+            <rect x="760" y="115" width="200" height="60" fill="#f1ead8" stroke="#1c1611" stroke-width="1.2"/>
+            <text x="860" y="137" text-anchor="middle" font-size="13" font-family="Newsreader" font-weight="500" fill="#1c1611">train.parquet</text>
+            <text x="860" y="155" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#4a3f31">sft_v0.1/  · embed</text>
+            <text x="860" y="168" text-anchor="middle" font-size="11" font-family="JetBrains Mono" fill="#7a6c57">verl multiturn schema</text>
+          </g>
+
+          <!-- arrow parquet -> trainer -->
+          <line x1="860" y1="175" x2="860" y2="230" stroke="#1c1611" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- SFT trainer -->
+          <g>
+            <rect x="760" y="240" width="200" height="50" fill="#f1ead8" stroke="#1c1611" stroke-width="1.2" stroke-dasharray="4 3"/>
+            <text x="860" y="262" text-anchor="middle" font-size="13" font-family="Newsreader" font-style="italic" fill="#1c1611">verl SFT trainer</text>
+            <text x="860" y="278" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#7a6c57">(out of scope — separate sub-plan)</text>
+          </g>
+
+          <!-- eval loop: base + sft -->
+          <g>
+            <rect x="40" y="295" width="400" height="50" fill="#f1ead8" stroke="#1c1611" stroke-width="1"/>
+            <text x="60" y="316" font-size="12" font-family="Newsreader" font-weight="500" fill="#1c1611">eval_overfit10_{base,sft}.yaml  ·  n=3 / task  ·  30 instances:</text>
+            <text x="60" y="334" font-size="11" font-family="JetBrains Mono" fill="#4a3f31">base Qwen  →  baseline_scores.json</text>
+            <text x="245" y="334" font-size="11" font-family="JetBrains Mono" fill="#a23a1f">SFT Qwen  →  trained_scores.json</text>
+          </g>
+
+          <!-- arrow trainer -> eval -->
+          <path d="M 860 290 Q 860 320 460 320" fill="none" stroke="#1c1611" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- delta -->
+          <g>
+            <rect x="460" y="295" width="500" height="50" fill="#1c1611" stroke="#1c1611"/>
+            <text x="710" y="316" text-anchor="middle" font-size="12" font-family="Newsreader" font-weight="500" fill="#f1ead8">Δ = trained − base &nbsp;·&nbsp; scale 0..10</text>
+            <text x="710" y="334" text-anchor="middle" font-size="10" font-family="JetBrains Mono" fill="#d6a78f">+3 or more ⇒ plumbing works</text>
+          </g>
+        </svg>
+      </div>
+
+      <p style="color: var(--ink-faint); font-size: 14px; font-style: italic;">Dashed border = produced by the SFT-training sub-task, not by this plan. Solid red border = the one new piece this plan introduces.</p>
+
+      <h3>Critical file inventory</h3>
+      <table>
+        <thead><tr><th>Path</th><th>Status</th><th>Owner</th></tr></thead>
+        <tbody>
+          <tr><td><a href="../../../MARS-Voyager/androidworld/eval/configs/demos_overfit10.yaml">MARS-Voyager/androidworld/eval/configs/demos_overfit10.yaml</a></td><td><span class="pill warn">new</span></td><td>this plan · data gen (UI-Voyager teacher)</td></tr>
+          <tr><td><a href="../../../MARS-Voyager/androidworld/eval/configs/eval_overfit10_base.yaml">MARS-Voyager/androidworld/eval/configs/eval_overfit10_base.yaml</a></td><td><span class="pill warn">new</span></td><td>this plan · base Qwen eval (n=3)</td></tr>
+          <tr><td><a href="../../../MARS-Voyager/androidworld/eval/configs/eval_overfit10_sft.yaml">MARS-Voyager/androidworld/eval/configs/eval_overfit10_sft.yaml</a></td><td><span class="pill warn">new</span></td><td>this plan · SFT eval (n=3)</td></tr>
+          <tr><td><a href="../../../MARS-Voyager/run_android_world_local.sh">MARS-Voyager/run_android_world_local.sh</a></td><td><span class="pill good">exists</span></td><td>reused as-is</td></tr>
+          <tr><td><a href="../../../training/data/build_sft_v0.py">training/data/build_sft_v0.py</a></td><td><span class="pill good">exists</span></td><td>frozen — left untouched as the v0 build's historical record</td></tr>
+          <tr><td><a href="../../../training/data/build_sft_v0_1.py">training/data/build_sft_v0_1.py</a></td><td><span class="pill warn">new</span></td><td>v0.1 build: per-instance filename support + train/val split</td></tr>
+          <tr><td><a href="../../../training/data/preview_samples.py">training/data/preview_samples.py</a></td><td><span class="pill warn">new</span></td><td>renders N parquet rows as HTML for format verification</td></tr>
+          <tr><td><a href="../../../training/data/sft_v0.1/val.parquet">training/data/sft_v0.1/val.parquet</a></td><td><span class="pill warn">new</span></td><td>held-out validation split</td></tr>
+          <tr><td><a href="../../../training/data/summarize_eval_scores.py">training/data/summarize_eval_scores.py</a></td><td><span class="pill good">new</span></td><td>parses <code>detailed_results.csv</code> → score JSON</td></tr>
+          <tr><td><a href="../../../MARS-Voyager/androidworld/eval/agents/qwen_agent.py">MARS-Voyager/androidworld/eval/agents/qwen_agent.py</a></td><td><span class="pill warn">patched</span></td><td>thread <code>instance_idx</code> into filenames so <code>n_task_combinations &gt; 1</code> stops overwriting rollouts</td></tr>
+          <tr><td><a href="../../../MARS-Voyager/androidworld/eval/runner.py">MARS-Voyager/androidworld/eval/runner.py</a></td><td><span class="pill warn">patched</span></td><td>passes <code>i</code> from <code>enumerate(suite[name])</code> into <code>_run_task</code> → agent</td></tr>
+          <tr><td><a href="../../../training/data/sft_v0.1/train.parquet">training/data/sft_v0.1/train.parquet</a></td><td><span class="pill warn">new</span></td><td>build script output</td></tr>
+          <tr><td><a href="../../../training/data/sft_v0.1/baseline_scores.json">training/data/sft_v0.1/baseline_scores.json</a></td><td><span class="pill warn">new</span></td><td>this plan (step 5)</td></tr>
+          <tr><td><a href="../../../training/data/sft_v0.1/trained_scores.json">training/data/sft_v0.1/trained_scores.json</a></td><td><span class="pill bad">future</span></td><td>SFT-training sub-task</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Mockup &mdash; <code>demos_overfit10.yaml</code> diff vs <code>UI-Voyager.yaml</code></h3>
+      <p>Copy <a href="../../../MARS-Voyager/androidworld/eval/configs/UI-Voyager.yaml">UI-Voyager.yaml</a> as-is — it is the exact config the existing sft_v0 rollouts were generated under, so preprocessing stays byte-identical. Only <b>two lines</b> change: <code>n_task_combinations</code> goes 1 → 30, and <code>tasks: null</code> becomes the 10-name list. Optionally switch the <code>llm.model</code> field to the base Qwen checkpoint if the user wants the rollouts generated by base rather than UI-Voyager.</p>
+      <div class="mock">
+        <header>
+          <span class="dots"><span></span><span></span><span></span></span>
+          <span class="path">androidworld/eval/configs/demos_overfit10.yaml</span>
+          <span>YAML · diff from UI-Voyager.yaml</span>
+        </header>
+<pre><span class="c"># Android World Evaluation Config — overfit-10 sub-pool</span>
+<span class="c"># Copied verbatim from UI-Voyager.yaml; only eval.* below changes.</span>
+
+<span class="k">env:</span>
+  console_port: <span class="n">5556</span>
+  grpc_port: <span class="n">8554</span>
+  adb_path: <span class="s">~/Android/Sdk/platform-tools/adb</span>
+  emulator_path: <span class="s">~/Android/Sdk/emulator/emulator</span>
+  avd_name: <span class="s">AndroidWorldAvd</span>
+  android_sdk_root: <span class="s">~/Android/Sdk/</span>
+  android_avd_home: <span class="s">~/.android/avd/</span>
+
+<span class="k">llm:</span>
+  type: <span class="s">openai</span>
+  base_url: <span class="s">http://localhost:9000</span>
+  model: <span class="s">UI-Voyager</span>              <span class="c"># unchanged — UI-Voyager generates the demos</span>
+  temperature: <span class="n">0.0</span>
+  max_tokens: <span class="n">16384</span>
+  top_p: <span class="n">1</span>
+  max_retry: <span class="n">3</span>
+  retry_delay: <span class="n">1.0</span>
+
+<span class="k">agent:</span>
+  type: <span class="s">local</span>
+  name: <span class="s">Qwen3VL-Agent</span>
+  model_name: <span class="s">qwen3vl</span>
+  prompt_name: <span class="s">qwen3vl_instruct</span>
+  wait_after_action_seconds: <span class="n">2</span>
+  use_som: <span class="k">false</span>
+  resize: <span class="k">null</span>
+  history_len: <span class="n">30</span>
+  sft_data_dir: <span class="s">./sft_data</span>
+  n_history_image: <span class="n">0</span>
+
+<span class="k">eval:</span>
+  suite_family: <span class="s">android_world</span>
+<span style="background:rgba(162,58,31,0.18); display:block; padding-left:2px;">  tasks:                            <span class="c"># ← was: null  (= all tasks)</span>
+    - <span class="s">ContactsAddContact</span>
+    - <span class="s">MarkorCreateNote</span>
+    - <span class="s">FilesMoveFile</span>
+    - <span class="s">ClockTimerEntry</span>
+    - <span class="s">AudioRecorderRecordAudio</span>
+    - <span class="s">ExpenseAddSingle</span>
+    - <span class="s">ExpenseDeleteSingle</span>
+    - <span class="s">MarkorDeleteAllNotes</span>
+    - <span class="s">ClockStopWatchRunning</span>
+    - <span class="s">BrowserMaze</span>
+  n_task_combinations: <span class="n">30</span>             <span class="c"># ← was: 1</span></span>
+  task_random_seed: <span class="n">42</span>               <span class="c"># unchanged from UI-Voyager.yaml</span>
+  checkpoint_dir: <span class="s">""</span>
+  output_path: <span class="s">~/android_world/runs</span></pre>
+      </div>
+
+      <h3>Mockup &mdash; <code>baseline_scores.json</code> &amp; <code>trained_scores.json</code></h3>
+      <p>Three instances per task (<code>n_task_combinations: 3</code>, same seed across base/SFT) → per-task <code>rate</code> is mean success in {0, 1/3, 2/3, 1}. Overall <code>rate</code> is mean over all 30 trials. <code>delta_rate</code> is the headline.</p>
+      <div class="preview-grid">
+        <div class="mock">
+          <header>
+            <span class="dots"><span></span><span></span><span></span></span>
+            <span class="path">sft_v0.1/baseline_scores.json</span>
+            <span>base Qwen, step 5</span>
+          </header>
+<pre>{
+  <span class="k">"model"</span>: <span class="s">"Qwen3-VL-4B-Instruct"</span>,
+  <span class="k">"revision"</span>: <span class="s">"ebb281ec70b…"</span>,
+  <span class="k">"config"</span>: <span class="s">"eval_overfit10_base.yaml"</span>,
+  <span class="k">"task_random_seed"</span>: <span class="n">42</span>,
+  <span class="k">"n_task_combinations"</span>: <span class="n">3</span>,
+  <span class="k">"per_task"</span>: {
+    <span class="c">// {successes, trials, rate}; trials = n_task_combinations</span>
+    <span class="k">"ContactsAddContact"</span>:    { <span class="k">"successes"</span>: <span class="n">0</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">0.00</span> },
+    <span class="k">"MarkorCreateNote"</span>:       { <span class="k">"successes"</span>: <span class="n">2</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">0.67</span> },
+    <span class="k">"FilesMoveFile"</span>:          { <span class="k">"successes"</span>: <span class="n">0</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">0.00</span> },
+    <span class="k">"ClockTimerEntry"</span>:       { <span class="k">"successes"</span>: <span class="n">1</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">0.33</span> },
+    <span class="k">"AudioRecorderRecordAudio"</span>: { <span class="k">"successes"</span>: <span class="n">2</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">0.67</span> },
+    <span class="c">// … 5 more …</span>
+  },
+  <span class="k">"overall"</span>: { <span class="k">"successes"</span>: <span class="n">8</span>, <span class="k">"trials"</span>: <span class="n">30</span>, <span class="k">"rate"</span>: <span class="n">0.267</span> }
+}</pre>
+        </div>
+        <div class="mock">
+          <header>
+            <span class="dots"><span></span><span></span><span></span></span>
+            <span class="path">sft_v0.1/trained_scores.json</span>
+            <span>SFT Qwen, step 7</span>
+          </header>
+<pre>{
+  <span class="k">"model"</span>: <span class="s">"sft_v0.1@step_2000"</span>,
+  <span class="k">"config"</span>: <span class="s">"eval_overfit10_sft.yaml"</span>,
+  <span class="k">"task_random_seed"</span>: <span class="n">42</span>,
+  <span class="k">"n_task_combinations"</span>: <span class="n">3</span>,
+  <span class="k">"per_task"</span>: {
+    <span class="k">"ContactsAddContact"</span>:    { <span class="k">"successes"</span>: <span class="n">3</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">1.00</span> },
+    <span class="k">"MarkorCreateNote"</span>:       { <span class="k">"successes"</span>: <span class="n">3</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">1.00</span> },
+    <span class="k">"FilesMoveFile"</span>:          { <span class="k">"successes"</span>: <span class="n">2</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">0.67</span> },
+    <span class="k">"ClockTimerEntry"</span>:       { <span class="k">"successes"</span>: <span class="n">3</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">1.00</span> },
+    <span class="k">"AudioRecorderRecordAudio"</span>: { <span class="k">"successes"</span>: <span class="n">3</span>, <span class="k">"trials"</span>: <span class="n">3</span>, <span class="k">"rate"</span>: <span class="n">1.00</span> },
+    <span class="c">// … 5 more …</span>
+  },
+  <span class="k">"overall"</span>:    { <span class="k">"successes"</span>: <span class="n">24</span>, <span class="k">"trials"</span>: <span class="n">30</span>, <span class="k">"rate"</span>: <span class="n">0.800</span> },
+  <span class="k">"delta_rate"</span>: <span class="n">+0.533</span>
+}</pre>
+        </div>
+      </div>
+      <p style="color: var(--ink-faint); font-size: 14px; font-style: italic;">Illustrative numbers — describe the <em>shape</em>, not a prediction. Three trials per task is enough to distinguish 0/3 (clear fail) from 3/3 (clear pass) and to put a coarse rate on the in-between cases. A negative <code>delta_rate</code> is a bug.</p>
+    </section>
+
+    <!-- ============ PROCEDURE ============ -->
+    <section id="procedure">
+      <h2><span class="num">§ 05</span>Execution procedure</h2>
+
+      <p>Two distinct configs, two distinct roles. Training data wants <em>many</em> param variations from a strong demonstrator; eval wants <em>one</em> consistent measurement point per task.</p>
+
+      <table>
+        <thead><tr><th>Phase</th><th>Config</th><th>Model</th><th>Instances</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><b>Data gen</b></td><td><code>demos_overfit10.yaml</code></td><td>UI-Voyager</td><td class="num">30 / task</td><td>produce diverse demos</td></tr>
+          <tr><td><b>Eval baseline</b></td><td><code>eval_overfit10_base.yaml</code></td><td>Qwen3-VL-4B base</td><td class="num">3 / task</td><td>multi-seed reference, mean success rate</td></tr>
+          <tr><td><b>Eval trained</b></td><td><code>eval_overfit10_sft.yaml</code></td><td>SFT checkpoint</td><td class="num">3 / task</td><td>same 3 seeds as baseline → matched compare</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout decision" style="margin-bottom: 24px;">
+        <div class="tag">Non-optional · step zero</div>
+        <p><b>Pilot the pipeline before launching the full run.</b> Existing infrastructure is a hypothesis the first time a new parameter value passes through it. Run a five-minute scaled-down version, write down what the output should look like, then diff. Skipping this step once already cost ~11 emulator-hours for 10 recoverable rollouts instead of ~250 — see [[feedback-pilot-before-long-runs]] in memory and the retrospective entry in the project notes.</p>
+        <p style="margin-top: 10px;"><b>Concrete pilot for this plan:</b></p>
+        <ol style="margin: 6px 0 0 0;">
+          <li>Author <code>demos_overfit10_pilot.yaml</code> with <code>n_task_combinations: 3</code> and one task (e.g. <code>ContactsAddContact</code>).</li>
+          <li>Write down expected output: <code>eval_results/UI-Voyager/results/&lt;TS&gt;/ContactsAddContact/</code> should contain <b>3 distinct</b> <code>repeat_00_inst_000_succ.jsonl</code>, <code>repeat_00_inst_001_succ.jsonl</code>, <code>repeat_00_inst_002_succ.jsonl</code> (or <code>_fail</code> variants), plus an <code>images/</code> directory whose filenames embed the matching <code>inst000/001/002</code> tags.</li>
+          <li>Run with <code>NUM_WORKERS=1</code> and the pilot config. ~5 min.</li>
+          <li>Diff actual against expected. If files are missing, named differently, or share content — stop. Fix before launching the full run.</li>
+          <li>Optional but recommended: rebuild the parquet from the pilot output with <code>build_sft_v0_1.py --out-dir /tmp/pilot_check</code> and confirm step count ≈ 3 × steps-per-rollout, not 1 × steps-per-rollout.</li>
+        </ol>
+      </div>
+
+      <ol class="steps">
+        <li><b>Author both configs.</b>
+          <ul>
+            <li><a href="../../../MARS-Voyager/androidworld/eval/configs/demos_overfit10.yaml">demos_overfit10.yaml</a> — copy of <a href="../../../MARS-Voyager/androidworld/eval/configs/UI-Voyager.yaml">UI-Voyager.yaml</a> with <code>tasks: [10 names]</code> and <code>n_task_combinations: 30</code>. Leaves <code>llm.model: UI-Voyager</code> in place.</li>
+            <li><a href="../../../MARS-Voyager/androidworld/eval/configs/eval_overfit10_base.yaml">eval_overfit10_base.yaml</a> — same task list, <code>n_task_combinations: 3</code>, <code>llm.model: Qwen3-VL-4B-Instruct</code>. Drives the baseline pass.</li>
+            <li><a href="../../../MARS-Voyager/androidworld/eval/configs/eval_overfit10_sft.yaml">eval_overfit10_sft.yaml</a> — identical to <code>eval_overfit10_base.yaml</code> except <code>llm.model</code> points at the SFT checkpoint's vLLM served-name. Same task_random_seed → matched 3-seed compare.</li>
+          </ul>
+        </li>
+
+        <li><b>Generate training data with UI-Voyager.</b>
+<pre><span class="c"># vLLM serves UI-Voyager</span>
+NUM_WORKERS=<span class="n">4</span> \
+CONFIG_NAME=<span class="s">demos_overfit10</span> \
+MODEL_NAME=<span class="s">UI-Voyager</span> \
+N_REPEATS=<span class="n">1</span> \
+RETRY_FAILED_TASKS=<span class="n">1</span> \
+FAILED_TASK_MAX_STREAK=<span class="n">5</span> \
+./run_android_world_local.sh</pre>
+          <p style="margin: 8px 0 0; font-size: 14px;">~300 instances, ~150–250 successful demos saved under <code>sft_data_dir</code>. Wall-clock ≈ 4 h on 4 workers.</p>
+        </li>
+
+        <li><b>Rebuild the parquet.</b> Use the new <a href="../../../training/data/build_sft_v0_1.py">build_sft_v0_1.py</a> (the v0 build is left untouched as a frozen artifact). It handles the per-instance filename scheme, dedupes by <code>(task, seed, repeat, instance)</code>, and writes a deterministic 90/10 train/val split:
+<pre>python3 training/data/build_sft_v0_1.py \
+  --eval-results MARS-Voyager/eval_results \
+  --out-dir training/data/sft_v0.1 \
+  --val-frac 0.1 \
+  --val-split-seed 42</pre>
+        <p style="margin: 8px 0 0; font-size: 14px;">Outputs <code>train.parquet</code> + <code>val.parquet</code> under <code>training/data/sft_v0.1/</code>. The split is rollout-level and stratified by task — every task contributes to both splits, so val loss measures per-step prediction on unseen trajectories of seen tasks (the right signal for an overfit experiment).</p>
+        </li>
+
+        <li><b>Eyeball the data.</b> Render ~20 random samples as HTML to verify the format end-to-end before training time:
+<pre>python3 training/data/preview_samples.py \
+  --parquet training/data/sft_v0.1/train.parquet \
+  --out-dir training/data/sft_v0.1/preview \
+  --n 20 --stratify-by-task</pre>
+        <p style="margin: 8px 0 0; font-size: 14px;">Open <code>preview/index.html</code>. Each sample page shows the screenshot, the raw <code>messages</code> (system / user / assistant), the chat-template-rendered string the processor will tokenize, and a colour-highlighted span over the assistant response so you can <em>see</em> which tokens contribute to the loss.</p>
+        </li>
+
+        <li><b>Baseline eval — base Qwen.</b> Serve <code>Qwen3-VL-4B-Instruct</code> on vLLM, run <code>eval_overfit10_base.yaml</code> with <b><code>RETRY_FAILED_TASKS=0</code></b> (eval measures single-shot capability; retries would distort the metric and unfairly favour whichever model gets the friendlier retry conditions). 30 instances total (10 tasks × 3 combinations), ~1.5 h wall-clock on 4 workers. Summarise into <a href="../../../training/data/sft_v0.1/baseline_scores.json">baseline_scores.json</a> as mean success rate per task:
+<pre>python3 training/data/summarize_eval_scores.py \
+  --csv MARS-Voyager/eval_results/Qwen3-VL-4B-Instruct/logs/&lt;TS&gt;/detailed_results.csv \
+  --config MARS-Voyager/androidworld/eval/configs/eval_overfit10_base.yaml \
+  --aggregate mean \
+  --out training/data/sft_v0.1/baseline_scores.json</pre>
+        </li>
+
+        <li><b>Train.</b> Hand to the SFT-training sub-task (out of scope). Pin checkpoint at <code>training/checkpoints/sft_v0.1/</code>.</li>
+
+        <li><b>Trained eval — SFT Qwen.</b> Serve the SFT checkpoint on vLLM. Run <code>eval_overfit10_sft.yaml</code> (already points at the SFT served-name). Same task list / seed / <code>n_task_combinations: 3</code> and <b>same <code>RETRY_FAILED_TASKS=0</code></b> as the baseline pass → identical protocol, directly comparable mean rates. Summarise:
+<pre>python3 training/data/summarize_eval_scores.py \
+  --csv MARS-Voyager/eval_results/sft_v0.1/logs/&lt;TS&gt;/detailed_results.csv \
+  --config MARS-Voyager/androidworld/eval/configs/eval_overfit10_sft.yaml \
+  --aggregate mean \
+  --model-label sft_v0.1@step_2000 \
+  --out training/data/sft_v0.1/trained_scores.json</pre>
+        </li>
+
+        <li><b>Report delta.</b> <code>delta_rate = trained.overall.rate − baseline.overall.rate</code> in [-1, 1]. Anything north of +0.30 is a clear plumbing-works signal; +0.50 or higher is the expected memorisation outcome. Also inspect per-task <code>rate</code> deltas — uniform improvement is the desired shape.</li>
+      </ol>
+
+      <h3>Mockup &mdash; <code>eval_overfit10_base.yaml</code> / <code>eval_overfit10_sft.yaml</code></h3>
+      <p>Both eval configs are identical to <code>demos_overfit10.yaml</code> except for the highlighted lines. The pair differs from each other only in <code>llm.model</code> — kept as two files (not one with a "flip this field" comment) so each run is a self-describing manifest.</p>
+      <div class="mock">
+        <header>
+          <span class="dots"><span></span><span></span><span></span></span>
+          <span class="path">androidworld/eval/configs/eval_overfit10_{base,sft}.yaml</span>
+          <span>diff from demos_overfit10.yaml</span>
+        </header>
+<pre><span class="c"># … env / agent sections identical to demos_overfit10.yaml …</span>
+
+<span class="k">llm:</span>
+  type: <span class="s">openai</span>
+  base_url: <span class="s">http://localhost:9000</span>
+<span style="background:rgba(162,58,31,0.18); display:block; padding-left:2px;">  model: <span class="s">Qwen3-VL-4B-Instruct</span>     <span class="c"># ← _base.yaml; _sft.yaml uses sft_qwen3vl_4b_v0_1_step710</span></span>
+  temperature: <span class="n">0.0</span>
+  <span class="c"># …</span>
+
+<span class="k">eval:</span>
+  suite_family: <span class="s">android_world</span>
+  tasks: <span class="c"># identical 10-name list as demos_overfit10.yaml</span>
+    - <span class="s">ContactsAddContact</span>
+    - <span class="c"># … 9 more …</span>
+<span style="background:rgba(162,58,31,0.18); display:block; padding-left:2px;">  n_task_combinations: <span class="n">3</span>            <span class="c"># ← 3 trials per task → mean success rate</span>
+  task_random_seed: <span class="n">42</span>              <span class="c"># same as demos_overfit10.yaml → matched param draws across base/SFT</span></span></pre>
+      </div>
+    </section>
+
+    <!-- ============ RISKS ============ -->
+    <section id="risks">
+      <h2><span class="num">§ 06</span>Risks &amp; off-ramps</h2>
+
+      <table>
+        <thead><tr><th style="width:32%">Risk</th><th>Signal</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Memorisation looks like learning</b></td>
+            <td>Loss → ~0, but trained model fails on tasks held-in train. Plumbing broken.</td>
+            <td>Step 7 evals on the <em>same seeds</em> as step 5. If trained model can't reproduce its own demos, we have a real bug, not a learning question.</td>
+          </tr>
+          <tr>
+            <td><b>Long-tail task dominates</b></td>
+            <td>One task contributes &gt; 25% of training steps (cf. <code>MarkorDeleteAllNotes</code>).</td>
+            <td>Per-task row cap in <code>build_sft_v0.py</code> (e.g. cap at 600 steps/task). Recorded in manifest.</td>
+          </tr>
+          <tr>
+            <td><b>Param-pool collapse</b></td>
+            <td>Post-dedupe rollouts &lt; 20 for some task.</td>
+            <td>Hand-write an enumerator for that task, or drop it from the list before training.</td>
+          </tr>
+          <tr>
+            <td><b>Emulator drift across runs</b></td>
+            <td>Same task + same seed gives different end states across runs (e.g. emulator state pollution).</td>
+            <td>AVD reset already happens per worker. If observed, page <a href="../../../MARS-Voyager/CLAUDE.md">MARS-Voyager/CLAUDE.md</a>'s troubleshooting and require fresh AVD copy per repeat.</td>
+          </tr>
+          <tr>
+            <td><b>Base success rate too low</b></td>
+            <td>After step 2, &lt; 8 successful rollouts/task even with retries.</td>
+            <td>The 10-task list contains a task too hard for Qwen3-VL-4B base. Swap it for the next ranked candidate from §03 and repeat step 2 for just that task.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ DELIVERABLE ============ -->
+    <section id="deliverable">
+      <h2><span class="num">§ 07</span>Deliverable shape</h2>
+
+      <p>The output of executing this plan is a single, named, reproducible dataset version that supersedes <code>sft_v0</code> for the dummy-run experiment:</p>
+
+      <ul>
+        <li><a href="../../../MARS-Voyager/androidworld/eval/configs/demos_overfit10.yaml">MARS-Voyager/androidworld/eval/configs/demos_overfit10.yaml</a> — frozen task list and combination count for data gen.</li>
+        <li><a href="../../../MARS-Voyager/androidworld/eval/configs/eval_overfit10_base.yaml">MARS-Voyager/androidworld/eval/configs/eval_overfit10_base.yaml</a> &amp; <a href="../../../MARS-Voyager/androidworld/eval/configs/eval_overfit10_sft.yaml">eval_overfit10_sft.yaml</a> — 3-seed eval configs, one per model.</li>
+        <li><a href="../../../MARS-Voyager/eval_results/Qwen3-VL-4B-Instruct/results/">eval_results/Qwen3-VL-4B-Instruct/results/&lt;ts&gt;/</a> — fresh rollouts.</li>
+        <li><a href="../../../training/data/sft_v0.1/train.parquet">training/data/sft_v0.1/train.parquet</a> — built by <code>build_sft_v0.py --out-dir training/data/sft_v0.1</code>.</li>
+        <li><a href="../../../training/data/sft_v0.1/baseline_scores.json">training/data/sft_v0.1/baseline_scores.json</a> — per-task base-model mean success rate over 3 seeds.</li>
+        <li>SFT-trained checkpoint &amp; matched-seed eval scores — produced by the training sub-task, evaluated under <code>eval_overfit10_sft.yaml</code> with the same <code>task_random_seed</code>.</li>
+      </ul>
+
+      <p>Success criterion is binary and concrete: <b>trained-vs-base per-task success rate, summed over the 10 tasks, is greater than zero by a clear margin.</b> Anything else, including a falling loss curve, is not evidence the plumbing works.</p>
+
+      <div class="ornament">·  ·  ·  end of brief  ·  ·  ·</div>
+    </section>
+  </main>
+
+  <!-- ============ MARGIN ============ -->
+  <aside class="margin">
+    <div class="label">Margin notes</div>
+
+    <div class="note">
+      <b>On "all variations"</b>
+      Tasks expose <code>generate_random_params</code> as a sampler over named pools, not a closed enumeration. Bumping <code>n_task_combinations</code> approximates exhaustive coverage statistically; hand-written enumerators would be exact but per-task. Plumbing test does not need exactness.
+    </div>
+
+    <div class="note">
+      <b>On retries</b>
+      <code>RETRY_FAILED_TASKS=1</code> with <code>FAILED_TASK_MAX_STREAK=5</code> re-runs failed instances up to 5 times. Effective attempts per combination ≈ 1 + 5 = 6. Saturates yield against base-success ≥ 0.4.
+    </div>
+
+    <div class="note">
+      <b>On dedupe</b>
+      <code>(task, seed)</code> dedupe (parent plan, §1) drops repeats by seed, not by params. Behaviourally identical rollouts with different seeds are kept. Tolerable here; the duplicates reinforce overfit.
+    </div>
+
+    <div class="note">
+      <b>On step caps</b>
+      A 600-step per-task cap would clip <code>MarkorDeleteAllNotes</code> (35 steps × 30 ≈ 1050) and <code>FilesMoveFile</code> (31 × 30 ≈ 930). Add the cap before training, after confirming the post-build stats.
+    </div>
+
+    <div class="note">
+      <b>On the baseline file</b>
+      <code>baseline_scores.json</code> exists to anchor the eval delta. Without it, "did training help" becomes a vibes question. Same seeds, same scoring — the only honest comparison.
+    </div>
+  </aside>
+</div>
+</body>
+</html>
